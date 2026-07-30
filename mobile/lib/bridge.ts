@@ -117,8 +117,30 @@ export class BridgeConnectionError extends Error {
   }
 }
 
+/**
+ * The bridge is reachable but rejected the stored credential. Retrying cannot
+ * help: only pairing again can.
+ *
+ * On iOS the Keychain survives an app uninstall, so a reinstalled app comes back
+ * holding a token the Mac may no longer accept. Treated as a plain connection
+ * error, that looked exactly like a flaky network and the app retried forever
+ * without ever saying the credential was the problem.
+ *
+ * Extends BridgeConnectionError so existing checks keep working.
+ */
+export class BridgeAuthError extends BridgeConnectionError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BridgeAuthError';
+  }
+}
+
 export function isBridgeConnectionError(error: unknown) {
   return error instanceof BridgeConnectionError;
+}
+
+export function isBridgeAuthError(error: unknown) {
+  return error instanceof BridgeAuthError;
 }
 
 export function inferBridgeUrl() {
@@ -170,7 +192,11 @@ export async function bridgeRequest<T>(
     const payload = (await response.json()) as T & { error?: string };
     if (!response.ok) {
       const message = payload.error ?? `Bridge error ${response.status}`;
-      if (response.status === 401) throw new BridgeConnectionError(message);
+      if (response.status === 401) {
+        throw new BridgeAuthError(
+          'This Mac no longer accepts the saved access code. Run "microdex pair" on the Mac and scan the new QR.',
+        );
+      }
       throw new Error(message);
     }
     return payload;

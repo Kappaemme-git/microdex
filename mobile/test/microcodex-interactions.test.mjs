@@ -52,7 +52,9 @@ test('the dial supports reasoning, navigation, scroll, click, and 500 ms setting
   assert.match(reasoningDialSource, /onCommit:\s*\(index:\s*number\)\s*=>\s*void/);
   assert.match(reasoningDialSource, /'composer-navigation'/);
   assert.match(reasoningDialSource, /'conversation-scroll'/);
-  assert.match(reasoningDialSource, /onStep:\s*\(delta:\s*-1 \| 1\)\s*=>\s*void/);
+  // `steps` carries how many notches a flick crossed, so a spin costs one
+  // request instead of one per notch.
+  assert.match(reasoningDialSource, /onStep:\s*\(delta:\s*-1 \| 1, steps:\s*number\)\s*=>\s*void/);
   assert.match(reasoningDialSource, /Gesture\.Exclusive\(longPress, tap\)/);
   assert.match(reasoningDialSource, /Gesture\.LongPress\(\)/);
   assert.match(reasoningDialSource, /\.minDuration\(500\)/);

@@ -52,6 +52,7 @@ import {
   bridgeEventsUrl,
   bridgeRequest,
   inferBridgeUrl,
+  isBridgeAuthError,
   isBridgeConnectionError,
   mobileAppInfo,
 } from '@/lib/bridge';
@@ -335,6 +336,10 @@ export default function ControllerScreen() {
   const reconnectAttempt = useRef(0);
   const connectionInFlight = useRef(false);
   const pairingInFlight = useRef(false);
+  /** Pairing link already attempted, so an incoming link is claimed once only. */
+  const handledPairingUrl = useRef<string | null>(null);
+  /** Set when the Mac rejected the saved credential, which stops the retry loop. */
+  const credentialRejected = useRef(false);
   const incomingUrl = Linking.useLinkingURL();
   const networkState = Network.useNetworkState();
 
@@ -700,6 +705,7 @@ export default function ControllerScreen() {
       setSettingsVisible(false);
       setScannerVisible(false);
       reconnectAttempt.current = 0;
+      credentialRejected.current = false;
       announce('Bridge connected. The keys now control Codex.');
       if (interactive) {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -708,6 +714,17 @@ export default function ControllerScreen() {
     } catch (error) {
       setStatus(null);
       setRemote(null);
+      // A rejected credential is final. Say so once and drop the stale token, so
+      // the reconnect loop stops and the pairing screen becomes reachable
+      // instead of the app retrying an access code the Mac will never accept.
+      if (isBridgeAuthError(error)) {
+        credentialRejected.current = true;
+        announce(readableError(error), true);
+        await deleteStoredValue(STORAGE_TOKEN);
+        setToken('');
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        return false;
+      }
       if (interactive) {
         announce(readableError(error), true);
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -723,6 +740,8 @@ export default function ControllerScreen() {
   const acceptPairingCode = useCallback(async (value: string) => {
     if (pairingInFlight.current) return;
     pairingInFlight.current = true;
+    // A fresh QR is exactly what clears a previously rejected credential.
+    credentialRejected.current = false;
     try {
       const payload = parsePairingUrl(value);
       // Stop the camera after the first valid read. If the Mac is unreachable,
@@ -855,6 +874,12 @@ export default function ControllerScreen() {
     const isPairDeepLink = /^microdex:\/\/\/?pair\b/.test(incomingUrl);
     const isPairHttp = /\/pair(?:\?|$)/.test(incomingUrl);
     if (!isPairDeepLink && !isPairHttp) return;
+    // One attempt per link. `incomingUrl` keeps its value, and this effect
+    // re-runs whenever a state update gives `acceptPairingCode` a new identity —
+    // including the state update the failure itself causes. That turned a single
+    // spent code into an endless retry loop with no way out.
+    if (handledPairingUrl.current === incomingUrl) return;
+    handledPairingUrl.current = incomingUrl;
     void acceptPairingCode(incomingUrl);
   }, [acceptPairingCode, incomingUrl]);
 
@@ -864,14 +889,16 @@ export default function ControllerScreen() {
       status ||
       !bridgeUrl.trim() ||
       !token.trim() ||
-      networkState.isConnected === false
+      networkState.isConnected === false ||
+      // Nothing to retry once the Mac has rejected the credential.
+      credentialRejected.current
     ) return;
 
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const reconnect = async () => {
       const connected = await connectToBridge(bridgeUrl, token);
-      if (cancelled || connected) return;
+      if (cancelled || connected || credentialRejected.current) return;
       reconnectAttempt.current += 1;
       const delay = Math.min(15_000, 1_000 * 2 ** Math.min(reconnectAttempt.current, 4));
       retryTimer = setTimeout(() => void reconnect(), delay);

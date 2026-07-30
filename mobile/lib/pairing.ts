@@ -93,6 +93,18 @@ export function parsePairingUrl(value: string): PairingPayload {
   throw new Error('This is not a Microdex pairing QR code.');
 }
 
+/**
+ * The pairing code was valid once but cannot be claimed again. Retrying is
+ * pointless: only a fresh QR from the Mac can recover, so callers must stop and
+ * say so rather than loop.
+ */
+export class PairingCodeSpentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PairingCodeSpentError';
+  }
+}
+
 export async function claimPairingPayload(payload: PairingPayload): Promise<PairingCredentials> {
   if (payload.token) return { bridgeUrl: payload.bridgeUrl, token: payload.token };
   if (!payload.code) throw new Error('The pairing QR code is incomplete.');
@@ -111,6 +123,17 @@ export async function claimPairingPayload(payload: PairingPayload): Promise<Pair
     });
     const result = (await response.json()) as { token?: string; error?: string };
     if (!response.ok || !result.token) {
+      // The bridge mints one pairing session per process and it is single use, so
+      // after the first pairing every QR it still serves is dead. That happens to
+      // anyone who reinstalls the app: the phone no longer holds a token, and a
+      // fresh code can only be requested with one. The recovery exists but the
+      // bridge never names it, which left people retrying a code that could not
+      // work.
+      if (response.status === 401 || response.status === 410) {
+        throw new PairingCodeSpentError(
+          'This pairing QR has already been used or has expired. Run "microdex pair" on the Mac and scan the new QR.',
+        );
+      }
       throw new Error(result.error || 'The computer rejected this pairing QR.');
     }
     return { bridgeUrl: normalizeBridgeUrl(payload.bridgeUrl), token: result.token };

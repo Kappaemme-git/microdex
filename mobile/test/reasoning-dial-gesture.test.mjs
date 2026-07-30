@@ -28,21 +28,46 @@ test('the reasoning dial owns its drag inside the screen gesture hierarchy', () 
   assert.match(dialSource, /Gesture\.Exclusive\(longPress, tap\)/);
   assert.match(dialSource, /Gesture\.Simultaneous\(/);
   assert.match(dialSource, /\.minDuration\(500\)/);
-  assert.match(dialSource, /\.runOnJS\(true\)/);
-  assert.match(dialSource, /\.onTouchesUp\(\(\) => \{/);
-  assert.match(
-    dialSource,
-    /\.onEnd\(\(\) => \{\s*if \(mode === 'reasoning'\) commitPan\(\)/,
-  );
   assert.match(dialSource, /\.onFinalize\(\(\) => \{/);
-  assert.match(dialSource, /const commitPan = useCallback\(\(\) => \{/);
-  assert.match(dialSource, /onCommit\(lastIndex\.current\)/);
-  assert.match(dialSource, /const schedulePanCommit = useCallback\(\(\) => \{/);
-  assert.match(dialSource, /schedulePanCommit\(\)/);
-  assert.match(dialSource, /\}, 220\)/);
   assert.match(dialSource, /<GestureDetector gesture=\{dialGesture\}>/);
   assert.match(dialSource, /mode === 'reasoning'/);
-  assert.match(dialSource, /previewEncoderStep/);
+});
+
+test('the cap angle is driven by the gesture, not by a React render', () => {
+  // The rotation used to be computed from the `index` prop, so the cap only
+  // moved once the parent re-rendered after a commit — never under the finger.
+  assert.match(dialSource, /const angle = useSharedValue\(/);
+  assert.match(dialSource, /useAnimatedStyle\(\(\) => \(\{\s*transform: \[\{ rotate: `\$\{angle\.value\}deg` \}\]/);
+  assert.doesNotMatch(dialSource, /rotate: `\$\{rotation\}deg`/);
+  assert.match(dialSource, /<Animated\.View style=\{\[styles\.dialCapWrapper, capStyle\]\}>/);
+
+  const reasoningPan = dialSource.slice(
+    dialSource.indexOf('const reasoningPan = Gesture.Pan()'),
+    dialSource.indexOf('const encoderPan = Gesture.Pan()'),
+  );
+  assert.ok(reasoningPan.length > 0, 'the reasoning pan must stay identifiable');
+  // A worklet, so no round trip to JS per frame.
+  assert.match(reasoningPan, /'worklet'/);
+  assert.doesNotMatch(reasoningPan, /runOnJS\(true\)/);
+  // Fractional travel while dragging, integer only when a level is crossed.
+  assert.match(reasoningPan, /dominantDistance \/ PIXELS_PER_STEP/);
+  assert.match(reasoningPan, /if \(next !== lastPreviewed\.value\)/);
+  assert.match(reasoningPan, /runOnJS\(preview\)\(next\)/);
+  // The commit reports the level the finger settled on.
+  assert.match(dialSource, /const commitDragged = useCallback\(/);
+  assert.match(dialSource, /runOnJS\(commitDragged\)\(settled\)/);
+});
+
+test('the encoder modes batch their notches instead of one request each', () => {
+  const encoderPan = dialSource.slice(dialSource.indexOf('const encoderPan = Gesture.Pan()'));
+  assert.ok(encoderPan.length > 0, 'the encoder pan must stay identifiable');
+  assert.match(encoderPan, /'worklet'/);
+  assert.match(encoderPan, /dominantDistance \/ PIXELS_PER_DETENT/);
+  assert.match(encoderPan, /runOnJS\(emitEncoderSteps\)\(crossed\)/);
+  assert.match(encoderPan, /runOnJS\(flushEncoderSteps\)\(\)/);
+  // One request per flick, not per notch: each used to wait for the previous.
+  assert.match(dialSource, /onStep\(pending > 0 \? 1 : -1, Math\.abs\(pending\)\)/);
+  assert.match(dialSource, /ENCODER_FLUSH_MS/);
 });
 
 test('the global chat swipe does not wrap the hardware controls', () => {

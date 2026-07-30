@@ -93,8 +93,11 @@ test('programmable keys have a visible manager with replace and remove controls'
 
 test('the controller includes the full keycap catalog and in-app guide', () => {
   assert.match(controllerSource, /MICRO_ACTIONS/);
-  assert.match(controllerSource, /MICRO_KEYCAPS/);
-  assert.match(controllerSource, /KEYCAP LABEL/);
+  // The editor no longer shows a keycap grid: a cap is decoration, and choosing
+  // it by hand only produced keys whose label contradicted their command. The
+  // cap now follows the command through the catalog.
+  assert.match(controllerSource, /suggestedKeycapForCommand/);
+  assert.doesNotMatch(controllerSource, /KEYCAP LABEL/);
   assert.match(controllerSource, /Search verified Codex commands/);
   assert.match(controllerSource, /PROGRAMMABLE KEY/);
   assert.match(controllerSource, /CODEX MICRO CONTROLS/);
