@@ -1,0 +1,45 @@
+{
+  "name": "microdex-cli",
+  "version": "0.1.11",
+  "description": "Local Mac bridge and pairing CLI for Microdex on iPhone.",
+  "private": false,
+  "type": "module",
+  "bin": {
+    "microdex": "bridge/scripts/microdex.mjs"
+  },
+  "files": [
+    "bridge/hooks",
+    "bridge/lib",
+    "bridge/native",
+    "bridge/native-shim",
+    "bridge/scripts/microdex.mjs",
+    "bridge/scripts/diagnose-desktop.mjs",
+    "bridge/server.mjs",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "app": "node bridge/scripts/start-mobile-dev.mjs",
+    "bridge": "node bridge/server.mjs",
+    "pair": "node bridge/scripts/microdex.mjs pair",
+    "mobile": "npm --prefix mobile start",
+    "mobile:lan": "npm --prefix mobile start -- --lan",
+    "web": "npm --prefix web run dev",
+    "web:build": "npm --prefix web run build",
+    "lint": "npm --prefix mobile run lint",
+    "test": "node --test bridge/test/*.test.mjs",
+    "native:test": "node bridge/native-shim/self-test.mjs",
+    "fast:on": "node bridge/scripts/set-fast.mjs on",
+    "fast:off": "node bridge/scripts/set-fast.mjs off",
+    "fast:status": "node bridge/scripts/set-fast.mjs status"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "qrcode-terminal": "^0.12.0",
+    "ws": "^8.21.1"
+  }
+}

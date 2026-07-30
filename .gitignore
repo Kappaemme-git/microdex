@@ -1,0 +1,55 @@
+# Dipendenze
+node_modules/
+mobile/node_modules/
+web/node_modules/
+
+# Build e cache
+dist/
+build/
+.expo/
+mobile/.expo/
+.expo-shared/
+web-build/
+*.tsbuildinfo
+
+# Repo di terze parti tenute in locale come riferimento.
+# codex-micro-app e' il progetto MIT di maxxspotter da cui e' adattato il native
+# shim: le sue note di licenza vivono in bridge/native-shim/, ma il suo codice
+# non va ridistribuito da questa repo.
+tmp/
+build-startup-brand/
+
+# Materiale di lavoro non pubblicabile
+outputs/
+.backup-pre-skeuo/
+mobile/.backup-pre-skeuo/
+
+# QR di pairing: contengono codici monouso, fuori da una repo pubblica
+*-pairing-qr.png
+expo-go-qr.png
+
+# Documenti interni di rilascio, non interessano chi contribuisce
+RELEASE-BRIEF.md
+DA-FARE-DOPO-LA-BUILD.md
+
+# Credenziali e segreti
+.env
+.env.*
+!.env.example
+*.p12
+*.mobileprovision
+*.keystore
+*.jks
+google-services.json
+GoogleService-Info.plist
+
+# File di lavoro del bridge
+*.microdex.bak
+.microdex-*.tmp
+
+# Sistema
+.DS_Store
+*.log
+npm-debug.log*
+.idea/
+.vscode/
