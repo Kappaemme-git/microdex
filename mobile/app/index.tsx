@@ -40,7 +40,11 @@ import {
 import { DeckLighting, type MicLight } from '@/components/deck-lighting';
 import { HardwareKey } from '@/components/hardware-key';
 import { Joystick } from '@/components/joystick';
-import { CodexSymbol } from '@/components/key-symbols';
+import {
+  CodexSymbol,
+  ExpandSymbol,
+  LightningSymbol,
+} from '@/components/key-symbols';
 import { ReasoningDial } from '@/components/reasoning-dial';
 import { DismissibleSheet, SheetHandlePill } from '@/components/sheet-dismiss-handle';
 import { RaisedShell, Screw, ShellPool, getSkeuo, useSkeuo } from '@/components/skeuo';
@@ -2176,7 +2180,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Toggle Fast Mode"
-                    symbol={<CodexMicroGlyph keycapId="FAST" size={27} color={skeuo.icon} />}
+                    symbol={<LightningSymbol color={skeuo.icon} />}
                     unavailableReason={unavailableReason('FAST')}
                     disabled={loadingAction === 'fast'}
                     onPress={() => void toggleFast()}
@@ -2185,7 +2189,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Approve current request"
-                    symbol={<CodexMicroGlyph keycapId="APPR" size={27} color={skeuo.icon} />}
+                    icon="check-circle-outline"
                     unavailableReason={unavailableReason('APPR')}
                     disabled={loadingAction === 'approve'}
                     active={Boolean(remote?.pendingApproval)}
@@ -2196,7 +2200,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Decline current request"
-                    symbol={<CodexMicroGlyph keycapId="REJ" size={27} color={skeuo.icon} />}
+                    icon="close-circle-outline"
                     unavailableReason={unavailableReason('REJ')}
                     disabled={loadingAction === 'decline'}
                     onPress={() => void resolveApproval('decline')}
@@ -2205,7 +2209,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Continue in a new chat"
-                    symbol={<CodexMicroGlyph keycapId="SPLIT" size={27} color={skeuo.icon} />}
+                    symbol={<ExpandSymbol color={skeuo.icon} />}
                     unavailableReason={unavailableReason('SPLIT')}
                     disabled={loadingAction === 'fork'}
                     onPress={() => void forkCurrentTask()}
@@ -2266,7 +2270,7 @@ export default function ControllerScreen() {
                 <View style={styles.wideSlot}>
                   <HardwareKey
                     accessibilityLabel="Push to talk"
-                    symbol={<CodexMicroGlyph keycapId="MIC" size={29} color={skeuo.icon} />}
+                    icon="microphone-outline"
                     active={dictationActive}
                     glowColor={dictationActive ? LED_RECORDING : undefined}
                     unavailableReason={unavailableReason('MIC')}
@@ -2279,7 +2283,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Send message"
-                    symbol={<CodexMicroGlyph keycapId="CODEX" size={29} color={skeuo.icon} />}
+                    symbol={<CodexSymbol color={skeuo.icon} />}
                     unavailableReason={unavailableReason('CODEX')}
                     disabled={loadingAction === 'send'}
                     onPress={openRemoteComposer}

@@ -67,6 +67,9 @@ export function CodexMicroActionGlyph({
 
 function glyphForKeycap(keycapId: MicroKeycapId, color: string): ReactNode {
   switch (keycapId) {
+    // FAST, SPLIT e CODEX sono i tracciati originali di key-symbols.tsx, fatti
+    // a mano per la prima versione dell'app. Erano giusti: sostituirli con una
+    // rilettura della foto li ha peggiorati, quindi sono stati rimessi.
     case 'FAST':
       return <Path d="M18.7 2.8 7.2 17.1h7.6l-1.6 12.1 11.6-14.5h-7.6z" />;
     case 'APPR':
@@ -84,6 +87,8 @@ function glyphForKeycap(keycapId: MicroKeycapId, color: string): ReactNode {
         </>
       );
     case 'SPLIT':
+      // ExpandSymbol originale di key-symbols.tsx: un ramo entra da sinistra e
+      // si apre in due, ciascuno con la propria punta a destra.
       return (
         <Path d="M4.5 16h7.2c5.3 0 5-8 10.3-8h5.3m-4.1-4.1L27.3 8l-4.1 4.1M11.7 16c5.3 0 5 8 10.3 8h5.3m-4.1-4.1 4.1 4.1-4.1 4.1" />
       );
@@ -95,10 +100,12 @@ function glyphForKeycap(keycapId: MicroKeycapId, color: string): ReactNode {
         </>
       );
     case 'CODEX':
+      // Blob originale di CodexSymbol, riportato da viewBox 36 a 32, con il
+      // prompt dentro: chevron e trattino, come sul cappuccio.
       return (
         <>
-          <Path d="M9.3 9.9a6.2 6.2 0 0 1 10-3.1 6.1 6.1 0 0 1 7.2 5.1 6.2 6.2 0 0 1 .6 11.3 6.2 6.2 0 0 1-10 5.1 6.2 6.2 0 0 1-10-5.2 6.2 6.2 0 0 1 2.2-13.2Z" />
-          <Path d="m11.4 13.1 4 3.8-4 3.8m7.1 0h5.2" />
+          <Path d="M9.1 9.9a6.2 6.2 0 0 1 7.1-4.4 5.5 5.5 0 0 1 6.3.6 5.4 5.4 0 0 1 3.4 5.5 6.2 6.2 0 0 1 0 8.9 5.5 5.5 0 0 1-3.5 6.6 5.5 5.5 0 0 1-8.1.7 6 6 0 0 1-7-5.8 5.9 5.9 0 0 1 1.8-12.1Z" />
+          <Path d="m12.2 13.4 3.3 2.9-3.3 2.9m5.8 1h4.2" />
         </>
       );
     case 'BUG':
@@ -144,14 +151,24 @@ function glyphForKeycap(keycapId: MicroKeycapId, color: string): ReactNode {
         </>
       );
     case 'DIFF':
+      // Sul cappuccio e' una colonna di punti e trattini, non un documento.
       return (
         <>
-          <Rect x="6" y="5" width="20" height="22" rx="3" />
-          <Path d="M11 10.5h6m-6 5h4m4.5 2v7m-3.5-3.5h7" />
+          <Circle cx="11" cy="8" r="1.6" fill={color} stroke="none" />
+          <Path d="M11 12.5v11" />
+          <Circle cx="11" cy="26" r="1.6" fill={color} stroke="none" />
+          <Circle cx="21" cy="12" r="1.6" fill={color} stroke="none" />
+          <Circle cx="21" cy="20" r="1.6" fill={color} stroke="none" />
         </>
       );
     case 'PLAY':
-      return <Path d="m11 7.5 14 8.5-14 8.5Z" />;
+      // Sul cappuccio il triangolo sta dentro un cerchio, non e' nudo.
+      return (
+        <>
+          <Circle cx="16" cy="16" r="11.4" />
+          <Path d="m13.2 10.8 8.4 5.2-8.4 5.2Z" />
+        </>
+      );
     case 'GIT':
       return (
         <>
@@ -224,18 +241,23 @@ function glyphForKeycap(keycapId: MicroKeycapId, color: string): ReactNode {
           <Path d="M16 9v7l4.5 3" />
         </>
       );
+    // I due cappucci del cervello non portano ne' il piu' ne' il meno: sono un
+    // cervello con le circonvoluzioni e uno diviso a meta'. Il piu' e il meno
+    // erano un'aggiunta mia e non esistono sul prodotto.
     case 'MIND+':
       return (
         <>
-          <Path d="M13.5 6.5a4 4 0 0 0-6 3.5 4.5 4.5 0 0 0-1 8 4.2 4.2 0 0 0 4.7 6.6 4.2 4.2 0 0 0 4.8 2.2V7.2a4 4 0 0 0-2.5-.7ZM16 11c-2.3 0-4 1.5-4 3.8m4 5.2c-2 0-3.3 1.3-3.3 3" />
-          <Path d="M24 10v8m-4-4h8" />
+          <Path d="M15.2 6.2a4.3 4.3 0 0 0-6.4 3.6 4.6 4.6 0 0 0-1.4 8.2 4.4 4.4 0 0 0 4.6 6.9 4.4 4.4 0 0 0 8.6-1.2V9.4a4.3 4.3 0 0 0-5.4-3.2Z" />
+          <Path d="M16.8 6.2a4.3 4.3 0 0 1 6.4 3.6 4.6 4.6 0 0 1 1.4 8.2 4.4 4.4 0 0 1-4.6 6.9" />
+          <Path d="M12.4 12.1c1.9.3 3 1.4 3.2 3.3m-4.4 3.4c1.9.2 3.1 1.3 3.4 3.2" />
         </>
       );
     case 'MIND-':
       return (
         <>
-          <Path d="M18.5 6.5a4 4 0 0 1 6 3.5 4.5 4.5 0 0 1 1 8 4.2 4.2 0 0 1-4.7 6.6 4.2 4.2 0 0 1-4.8 2.2V7.2a4 4 0 0 1 2.5-.7ZM16 11c2.3 0 4 1.5 4 3.8M16 20c2 0 3.3 1.3 3.3 3" />
-          <Path d="M4 14h8" />
+          <Path d="M15.2 6.2a4.3 4.3 0 0 0-6.4 3.6 4.6 4.6 0 0 0-1.4 8.2 4.4 4.4 0 0 0 4.6 6.9 4.4 4.4 0 0 0 3.2 1.3" />
+          <Path d="M16.8 6.2a4.3 4.3 0 0 1 6.4 3.6 4.6 4.6 0 0 1 1.4 8.2 4.4 4.4 0 0 1-4.6 6.9 4.4 4.4 0 0 1-3.2 1.3" />
+          <Path d="M16 5.9v20.1" />
         </>
       );
     case 'SETUP':
