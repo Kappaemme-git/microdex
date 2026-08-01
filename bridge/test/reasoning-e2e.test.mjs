@@ -45,28 +45,41 @@ async function activeModelContext(client) {
   };
 }
 
-test('bridge and mobile expose every effort supported by the active Codex model', async () => {
+/**
+ * Levels Codex may advertise that Microdex deliberately refuses to drive. Max is
+ * not applied reliably by any targeted model and Ultra burns usage limits, so the
+ * dial stops at Extra High. This test used to demand that Microdex expose
+ * everything the model reports, which is the opposite of that decision: on
+ * gpt-5.6-sol it failed with `missingFromBridge: ['max', 'ultra']` and would have
+ * stayed red forever, hiding a real regression underneath.
+ */
+const EXCLUDED_BY_DESIGN = ['max', 'ultra'];
+
+test('the bridge exposes the model efforts it drives, and nothing above the ceiling', async () => {
   const client = new CodexAppServer();
   try {
     await client.ready();
     const context = await activeModelContext(client);
-    const missingFromBridge = context.supported.filter(
+    assertDynamicMobileEfforts();
+
+    // Everything the model offers, except the levels excluded on purpose, has to
+    // be reachable.
+    const expected = context.supported.filter(
+      (effort) => !EXCLUDED_BY_DESIGN.includes(effort),
+    );
+    const missingFromBridge = expected.filter(
       (effort) => !BRIDGE_EFFORTS.includes(effort),
     );
-    assertDynamicMobileEfforts();
-    const missingFromMobile = [];
-
     assert.deepEqual(
-      {
-        missingFromBridge,
-        missingFromMobile,
-      },
-      {
-        missingFromBridge: [],
-        missingFromMobile: [],
-      },
+      missingFromBridge,
+      [],
       `${context.modelId} supports efforts that Microdex does not expose`,
     );
+
+    // And the excluded levels must stay out, however Codex advertises them.
+    const leaked = BRIDGE_EFFORTS.filter((effort) => EXCLUDED_BY_DESIGN.includes(effort));
+    assert.deepEqual(leaked, [], 'the ladder must stop at Extra High');
+    assert.ok(expected.length, `${context.modelId} reported no drivable effort`);
   } finally {
     client.close();
   }
@@ -86,7 +99,14 @@ test('every effort currently shown on the mobile dial reaches another Codex clie
     ]);
 
     assertDynamicMobileEfforts();
-    for (const effort of context.supported) {
+    // Only the levels the dial can actually reach. Asking for an excluded one
+    // used to throw "max reasoning is not supported by the active Codex model",
+    // which is the bridge doing its job, not a failure.
+    const drivable = context.supported.filter(
+      (effort) => BRIDGE_EFFORTS.includes(effort) && !EXCLUDED_BY_DESIGN.includes(effort),
+    );
+    assert.ok(drivable.length, 'the active model must offer at least one drivable effort');
+    for (const effort of drivable) {
       const changed = await microdex.updateSettings({
         threadId: context.threadId,
         reasoningEffort: effort,

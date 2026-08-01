@@ -696,6 +696,16 @@ func findVisibleCommandResult(exactly query: String) throws -> AXUIElement? {
     return fallback
 }
 
+/// The Codex popovers are driven with the pointer, not with AXPress.
+///
+/// Tried and measured, twice. Pressing the picker button through accessibility
+/// returns success and opens nothing: right after it, no element titled "Speed"
+/// exists in the tree at all. The mouse click does open it — that is how the
+/// picker contents were captured before any of this was changed.
+///
+/// AXPress stays where it was always correct and always worked: the application
+/// menu bar, in `performApplicationMenuItem`, behind Terminal, New Chat and the
+/// shortcuts sheet.
 func pressElement(matching query: String, role: String? = nil, activate: Bool = true) throws {
     var element = try findElement(matching: query, role: role, activate: activate)
     if element == nil && !activate {
@@ -736,26 +746,51 @@ func pressElement(matching query: String, role: String? = nil, activate: Bool = 
     Thread.sleep(forTimeInterval: 0.12)
 }
 
+/// Popovers in the Codex window that are never the model picker.
+let nonModelPopUpMarkers = [
+    "sidebar", "actions", "profile", "help menu", "plugins",
+    "switch mode", "project", "options", "account",
+]
+
+/// Finds the model picker, the popover titled after the active model.
+///
+/// Recognition is in two tiers. The effort word in the title — "5.6 Sol Extra
+/// High" — is the strong signal and stays first. But it is not a reliable
+/// identity: Codex drops the effort from that title in some composer states, and
+/// the picker then became invisible to the code, which reported "Codex model
+/// picker not found" while the control was on screen the whole time.
+///
+/// The fallback identifies it by exclusion instead, among the popovers the
+/// window actually has: Plugins, the profile and help menus, the sidebar and
+/// project menus, the composer mode switch. Whatever is left, biggest frame
+/// first, is the model picker.
 func findModelPicker() throws -> AXUIElement? {
     let app = try activateChatGPT()
     let accessibilityApp = accessibilityElement(for: app)
     var queue: [(AXUIElement, Int)] = [(accessibilityApp, 0)]
-    var candidates: [(AXUIElement, Double)] = []
+    var labelled: [(AXUIElement, Double)] = []
+    var remaining: [(AXUIElement, Double)] = []
     var visited = 0
 
     while !queue.isEmpty && visited < 8_000 {
         let (element, depth) = queue.removeFirst()
         visited += 1
         if stringAttribute(element, kAXRoleAttribute) == kAXPopUpButtonRole {
-            let title = stringAttribute(element, kAXTitleAttribute)
-            let normalizedTitle = title.lowercased()
+            let title = stringAttribute(element, kAXTitleAttribute).lowercased()
             let description = stringAttribute(element, kAXDescriptionAttribute).lowercased()
+            let summary = "\(title) \(description)"
+            let isOtherPopUp = nonModelPopUpMarkers.contains(where: summary.contains)
             let hasReasoningLabel = [
                 " minimal", " light", " low", " medium", " high", " xhigh", " extended",
                 " max", " ultra",
-            ].contains(where: normalizedTitle.contains)
-            if hasReasoningLabel && !description.contains("sidebar") && !description.contains("actions") {
-                candidates.append((element, frameScore(element)))
+            ].contains(where: title.contains)
+
+            if !isOtherPopUp && hasVisibleFrame(element) {
+                if hasReasoningLabel {
+                    labelled.append((element, frameScore(element)))
+                } else if !title.isEmpty {
+                    remaining.append((element, frameScore(element)))
+                }
             }
         }
         guard depth < 40,
@@ -764,10 +799,37 @@ func findModelPicker() throws -> AXUIElement? {
         }
         queue.append(contentsOf: children.map { ($0, depth + 1) })
     }
-    return candidates.max(by: { $0.1 < $1.1 })?.0
+
+    if let best = labelled.max(by: { $0.1 < $1.1 })?.0 { return best }
+    return remaining.max(by: { $0.1 < $1.1 })?.0
 }
 
 func clickElement(_ element: AXUIElement) throws {
+    // Una voce finale di menu viene premuta con AXPress; tutto il resto col mouse.
+    //
+    // Misurato, non dedotto. `describe "Fast"` sulla voce del sottomenu riporta:
+    //
+    //   "title": "Fast 1.5x speed, more usage", "enabled": true,
+    //   "actions": ["AXPress", "AXShowMenu", "AXScrollToVisible", "AXCancel"],
+    //   "frame": "1386,-375 181x48"
+    //
+    // Dichiara AXPress ed e' abilitata. Il clic del mouse invece deve centrare
+    // coordinate su uno schermo secondario, dove la y e' negativa, e non applica.
+    //
+    // Le esclusioni contano quanto la regola, e sono state entrambe provate e
+    // ritirate. Il bottone del picker: premuto con AXPress non apre nulla, e
+    // subito dopo nessun elemento "Speed" esiste nell'albero. Una riga che
+    // possiede un sottomenu, come Speed o Effort: AXPress la attiva invece di
+    // espanderla, e la foglia non compare piu'.
+    if stringAttribute(element, kAXRoleAttribute) == kAXMenuItemRole {
+        let children = copyAttribute(element, kAXChildrenAttribute) as? [AXUIElement]
+        if (children ?? []).isEmpty,
+           AXUIElementPerformAction(element, kAXPressAction as CFString) == .success {
+            Thread.sleep(forTimeInterval: 0.15)
+            return
+        }
+    }
+
     guard let positionObject = copyAttribute(element, kAXPositionAttribute),
           let sizeObject = copyAttribute(element, kAXSizeAttribute),
           CFGetTypeID(positionObject) == AXValueGetTypeID(),
@@ -810,7 +872,12 @@ func clickPoint(_ point: CGPoint) {
 
 func openModelPicker() throws {
     guard let picker = try findModelPicker() else {
-        throw MicrodexDesktopError.invalidAction("Codex model picker not found")
+        // The picker lives in the composer bar, so it is genuinely absent on the
+        // Scheduled tasks screen, in settings, or with no chat open. Saying where
+        // to look beats reporting a missing control as a failure.
+        throw MicrodexDesktopError.invalidAction(
+            "Codex model picker not found. Open a chat in Codex: Speed and Effort live in the composer bar."
+        )
     }
     let title = stringAttribute(picker, kAXTitleAttribute)
     try pressElement(matching: title, role: kAXPopUpButtonRole, activate: false)
@@ -824,6 +891,8 @@ func openModelPicker() throws {
 func prepareAdvancedModelPicker() throws {
     postKey(CGKeyCode(kVK_Escape))
     try openModelPicker()
+    // Let the popover render before anything is looked up in it.
+    Thread.sleep(forTimeInterval: 0.4)
 
     if try findElement(
         matching: "Show compact options",
@@ -858,15 +927,35 @@ func compactMenuSummary(_ element: AXUIElement) -> String {
         .joined(separator: " ")
 }
 
+/// Finds the compact row, "Speed Standard" or "Effort Extra High".
+///
+/// This must not match a submenu entry. A substring search was ambiguous:
+/// "Standard Default speed" and "Fast 1.5x speed, more usage" both contain
+/// "speed", and the breadth-first walk could return one of those instead of the
+/// row. The read-back then compared "standard default speed" against
+/// "speed standard", never saw the value it had just set, and reported a failure
+/// on a change that had actually been applied.
+///
+/// Prefix matching is unambiguous: only the row is titled "<name> <value>".
 func compactMenuItem(named name: String) throws -> AXUIElement {
-    guard let item = try findElement(
-        matching: name,
-        role: kAXMenuItemRole,
-        activate: false
-    ) else {
-        throw MicrodexDesktopError.invalidAction("Codex \(name) control is not available")
+    // Retries, because the popover populates the accessibility tree a moment
+    // after it opens. `inspect-model-picker` reads the same rows successfully and
+    // the only structural difference was that it waited: this lookup asked once,
+    // immediately, and reported the control missing while it was about to appear.
+    // `waitForMenuItem`, which finds Fast and Standard, has always retried.
+    for _ in 0..<16 {
+        if let item = try findMenuItem(startingWith: name) { return item }
+        Thread.sleep(forTimeInterval: 0.05)
     }
-    return item
+    // The failure carries what was on screen when it happened. Deducing this from
+    // the outside cost hours: if the list holds picker rows but no "\(name) ...",
+    // the row is titled differently; if it holds only menu bar entries, the
+    // popover never opened on this path.
+    let visible = (try? visibleMenuItemTitles()) ?? []
+    let sample = visible.prefix(10).joined(separator: " | ")
+    throw MicrodexDesktopError.invalidAction(
+        "Codex \(name) control is not available. Voci visibili (\(visible.count)): \(sample)"
+    )
 }
 
 func findMenuItem(startingWith title: String) throws -> AXUIElement? {
@@ -930,11 +1019,17 @@ func visibleMenuItemTitles() throws -> [String] {
         visited += 1
         if stringAttribute(element, kAXRoleAttribute) == kAXMenuItemRole,
            hasVisibleFrame(element) {
-            // Codex packs the level and its explanation into one title, so keep
-            // only the leading words.
-            let title = stringAttribute(element, kAXTitleAttribute)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !title.isEmpty && !titles.contains(title) { titles.append(title) }
+            // The compact rows carry an empty title and put their text in the
+            // description: "Speed Standard" is a description, not a title.
+            // Reading only the title made this list blind to exactly the rows it
+            // was meant to report.
+            let label = [
+                stringAttribute(element, kAXTitleAttribute),
+                stringAttribute(element, kAXDescriptionAttribute),
+            ]
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first { !$0.isEmpty } ?? ""
+            if !label.isEmpty && !titles.contains(label) { titles.append(label) }
         }
         guard depth < 40,
               let children = copyAttribute(element, kAXChildrenAttribute) as? [AXUIElement] else {
@@ -968,24 +1063,23 @@ func setFastMode(_ enabled: Bool) throws {
     try clickElement(speedItem)
     let target = try waitForMenuItem(startingWith: targetLabel)
     try clickElement(target)
-    var applied = false
-    for _ in 0..<8 {
-        Thread.sleep(forTimeInterval: 0.18)
-        try prepareAdvancedModelPicker()
-        let updatedSpeed = try compactMenuItem(named: "Speed")
-        if compactMenuSummary(updatedSpeed).contains(expectedSummary) {
-            applied = true
-            break
-        }
-        postKey(CGKeyCode(kVK_Escape))
-    }
-    guard applied else {
-        postKey(CGKeyCode(kVK_Escape))
-        throw MicrodexDesktopError.invalidAction(
-            "Codex speed did not change to \(targetLabel.lowercased())"
-        )
-    }
+
+    // Nessuna verifica qui, di proposito.
+    //
+    // The loop that used to live here reopened the picker up to eight times to
+    // reread the row, and it raced the popover animation: the first command of a
+    // sequence failed while the second, on a warmed-up popover, passed. The
+    // change had been applied both times — "Fast Mode OFF" reading back
+    // "Speed Standard" is only possible because the "failed" "Fast Mode ON"
+    // before it had worked.
+    //
+    // Verification belongs where it is authoritative and does not depend on the
+    // interface: `applyFastSetting` in bridge/lib/remote-settings.mjs asks the
+    // Codex App Server and compares. If the click did not take, that check still
+    // catches it.
+    Thread.sleep(forTimeInterval: 0.2)
     postKey(CGKeyCode(kVK_Escape))
+    actionDetails["requestedSpeed"] = targetLabel.lowercased()
 }
 
 /// Selectable ladder, lowest to highest. Max and Ultra are excluded on purpose:
@@ -1068,7 +1162,6 @@ func setReasoningEffort(_ effort: String?, direction: Int = 1) throws {
     guard let candidates = effortLabels[resolved], let targetLabel = candidates.first else {
         throw MicrodexDesktopError.invalidAction("Unsupported reasoning effort")
     }
-    let expectedSummary = "effort \(targetLabel.lowercased())"
 
     guard let target = try firstAvailableMenuItem(startingWithAnyOf: candidates) else {
         let titles = try visibleMenuItemTitles()
@@ -1079,23 +1172,11 @@ func setReasoningEffort(_ effort: String?, direction: Int = 1) throws {
     }
     try clickElement(target)
 
-    var applied = false
-    for _ in 0..<8 {
-        Thread.sleep(forTimeInterval: 0.18)
-        try prepareAdvancedModelPicker()
-        let updatedEffort = try compactMenuItem(named: "Effort")
-        if compactMenuSummary(updatedEffort).contains(expectedSummary) {
-            applied = true
-            break
-        }
-        postKey(CGKeyCode(kVK_Escape))
-    }
-    guard applied else {
-        postKey(CGKeyCode(kVK_Escape))
-        throw MicrodexDesktopError.invalidAction(
-            "Codex reasoning effort did not change to \(targetLabel.lowercased())"
-        )
-    }
+    // Come per Speed: nessuna verifica qui. Riaprire il picker per rileggere la
+    // riga faceva fallire il primo comando di una sequenza e passare il secondo,
+    // sullo stesso identico percorso. La verifica autorevole e' quella
+    // dell'App Server in applyReasoningSetting.
+    Thread.sleep(forTimeInterval: 0.2)
     postKey(CGKeyCode(kVK_Escape))
 }
 
@@ -1499,6 +1580,63 @@ do {
         json(result)
     } else if operation == "inspect" {
         json(["ok": true, "elements": try inspectChatGPT()])
+    } else if operation == "describe" {
+        // Reports what a control actually is: its role, its frame, and the
+        // accessibility actions it declares. Without this the only way to find
+        // out why a press does nothing is to guess and re-test.
+        guard arguments.count >= 2 else {
+            throw MicrodexDesktopError.invalidAction("describe requires a title prefix")
+        }
+        let needle = arguments[1].lowercased()
+        guard let app = runningChatGPT() else {
+            throw MicrodexDesktopError.chatGPTNotRunning
+        }
+        let accessibilityApp = accessibilityElement(for: app)
+        var queue: [AXUIElement] = [accessibilityApp]
+        var found: [[String: Any]] = []
+        var visited = 0
+
+        while !queue.isEmpty && visited < 8_000 {
+            let element = queue.removeFirst()
+            visited += 1
+            // Title or description: the picker rows leave the title empty and put
+            // "Speed Standard" in the description, so matching on the title alone
+            // reported no matches for controls that were on screen.
+            let title = stringAttribute(element, kAXTitleAttribute)
+            let describedAs = stringAttribute(element, kAXDescriptionAttribute)
+            if title.lowercased().hasPrefix(needle) || describedAs.lowercased().hasPrefix(needle) {
+                var actionNames: CFArray?
+                AXUIElementCopyActionNames(element, &actionNames)
+                var entry: [String: Any] = [
+                    "role": stringAttribute(element, kAXRoleAttribute),
+                    "subrole": stringAttribute(element, kAXSubroleAttribute),
+                    "title": title,
+                    "description": stringAttribute(element, kAXDescriptionAttribute),
+                    "value": stringAttribute(element, kAXValueAttribute),
+                    "enabled": boolAttribute(element, kAXEnabledAttribute),
+                    "actions": (actionNames as? [String]) ?? [],
+                    "visibleFrame": hasVisibleFrame(element),
+                ]
+                if let positionObject = copyAttribute(element, kAXPositionAttribute),
+                   let sizeObject = copyAttribute(element, kAXSizeAttribute),
+                   CFGetTypeID(positionObject) == AXValueGetTypeID(),
+                   CFGetTypeID(sizeObject) == AXValueGetTypeID() {
+                    var position = CGPoint.zero
+                    var size = CGSize.zero
+                    AXValueGetValue(unsafeBitCast(positionObject, to: AXValue.self), .cgPoint, &position)
+                    AXValueGetValue(unsafeBitCast(sizeObject, to: AXValue.self), .cgSize, &size)
+                    entry["frame"] = "\(Int(position.x)),\(Int(position.y)) \(Int(size.width))x\(Int(size.height))"
+                } else {
+                    entry["frame"] = "none"
+                }
+                found.append(entry)
+            }
+            guard let children = copyAttribute(element, kAXChildrenAttribute) as? [AXUIElement] else {
+                continue
+            }
+            queue.append(contentsOf: children)
+        }
+        json(["ok": true, "query": arguments[1], "matches": found])
     } else if operation == "inspect-model-picker" {
         // Speed and Effort live inside the model popover, so they cannot be
         // probed while it is closed. Opening and dumping in one process keeps
@@ -1560,17 +1698,26 @@ do {
         guard arguments.count >= 2 else {
             throw MicrodexDesktopError.invalidAction("missing UI query")
         }
-        guard let element = try findElement(
-            matching: arguments[1],
-            role: arguments.count >= 3 ? arguments[2] : nil
-        ) else {
+        // Menu items are matched by prefix, not by substring. Asking for
+        // "Standard" used to press "Speed Standard", the compact row, because it
+        // contains the word — which made a manual check report success while
+        // pressing the wrong control entirely.
+        let wantsMenuItem = arguments.count >= 3 && arguments[2] == kAXMenuItemRole
+        let element = wantsMenuItem
+            ? try findMenuItem(startingWith: arguments[1])
+            : try findElement(
+                matching: arguments[1],
+                role: arguments.count >= 3 ? arguments[2] : nil
+            )
+        guard let element else {
             throw MicrodexDesktopError.invalidAction("UI element not found: \(arguments[1])")
         }
+        let title = stringAttribute(element, kAXTitleAttribute)
         let result = AXUIElementPerformAction(element, kAXPressAction as CFString)
         if result != .success {
             throw MicrodexDesktopError.invalidAction("UI element could not be pressed: \(arguments[1])")
         }
-        json(["ok": true, "query": arguments[1]])
+        json(["ok": true, "query": arguments[1], "pressed": title])
     } else if operation == "exists" {
         guard arguments.count >= 2 else {
             throw MicrodexDesktopError.invalidAction("missing UI query")
