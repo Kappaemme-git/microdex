@@ -82,6 +82,31 @@ test('the companion allowlist covers every action the Swift implements', () => {
   assert.deepEqual(missing, []);
 });
 
+test('Voice Chat uses the native Codex controls and remains separate from dictation', () => {
+  for (const action of ['voice-start', 'voice-toggle-mute', 'voice-end']) {
+    assert.match(swiftSource, new RegExp(`case "${action}"`));
+    assert.match(desktopControlSource, new RegExp(`'${action}'`));
+    assert.match(serverSource, new RegExp(`'${action}'`));
+  }
+  for (const label of [
+    'Start new voice chat',
+    'Mute microphone',
+    'Unmute microphone',
+    'End voice chat',
+  ]) {
+    assert.ok(swiftSource.includes(label), `missing native Voice control: ${label}`);
+  }
+  assert.match(swiftSource, /func visibleVoiceSessionStatus/);
+  assert.match(swiftSource, /"voiceActive": voice\?\.active \?\? false/);
+  assert.match(serverSource, /desktopResult\.voiceState/);
+
+  const noTreeNeeded = desktopControlSource.slice(
+    desktopControlSource.indexOf('const NO_WINDOW_TREE_ACTIONS'),
+    desktopControlSource.indexOf('let buildPromise'),
+  );
+  assert.doesNotMatch(noTreeNeeded, /voice-start|voice-toggle-mute|voice-end/);
+});
+
 // Titles observed in the live Codex accessibility tree (app 26.721.81911).
 // Codex packs the level and its explanation into a single title, which is why
 // the companion matches on a leading word instead of on equality.

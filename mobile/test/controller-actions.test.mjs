@@ -73,7 +73,7 @@ test('the six lit keys are programmable and never select another chat', () => {
   );
   assert.match(controllerSource, /STORAGE_PROGRAMMED_KEYS/);
   assert.match(controllerSource, /STORAGE_LEGACY_PROGRAMMED_KEYS/);
-  assert.match(controllerSource, /EMPTY_PROGRAMMED_KEYS/);
+  assert.match(controllerSource, /defaultProgrammedKeys/);
   assert.match(controllerSource, /programmedActionId/);
   assert.match(controllerSource, /keycapId: programmed\.keycapId/);
   assert.match(controllerSource, /action: programmed\.action/);
@@ -93,11 +93,11 @@ test('programmable keys have a visible manager with replace and remove controls'
 
 test('the controller includes the full keycap catalog and in-app guide', () => {
   assert.match(controllerSource, /MICRO_ACTIONS/);
-  // The editor no longer shows a keycap grid: a cap is decoration, and choosing
-  // it by hand only produced keys whose label contradicted their command. The
-  // cap now follows the command through the catalog.
+  // The editor shows official tray artwork again, with defaults taken from the
+  // Codex Micro catalog so every printed cap has a real command.
+  assert.match(controllerSource, /KEYCAP_CATALOG/);
+  assert.match(controllerSource, /KEYCAP LABEL/);
   assert.match(controllerSource, /suggestedKeycapForCommand/);
-  assert.doesNotMatch(controllerSource, /KEYCAP LABEL/);
   assert.match(controllerSource, /Search verified Codex commands/);
   assert.match(controllerSource, /PROGRAMMABLE KEY/);
   assert.match(controllerSource, /CODEX MICRO CONTROLS/);
@@ -121,6 +121,12 @@ test('reasoning is authoritative and microphone actions have explicit start and 
   assert.match(controllerSource, /dictationReleaseTimer/);
   assert.match(controllerSource, /\}, 350\)/);
   assert.match(controllerSource, /\/api\/desktop\/action/);
+});
+
+test('native Voice Chat state is returned by the bridge', () => {
+  assert.match(controllerSource, /remote\?\.voice\?\.state/);
+  assert.match(controllerSource, /next\.voice\?\.state === 'setup'/);
+  assert.match(controllerSource, /Choose a voice on your Mac/);
 });
 
 test('the Expo preview and bridge receive the same access token', () => {

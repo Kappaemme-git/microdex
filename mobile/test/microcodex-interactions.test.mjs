@@ -39,12 +39,30 @@ test('the Mic key implements Codex Micro push-to-talk semantics', () => {
   const micKey = componentBlock(
     controllerSource,
     'accessibilityLabel="Push to talk"',
-    '/>',
+    '\n                  />',
   );
   assert.match(micKey, /onPressIn=/);
   assert.match(micKey, /onPressOut=/);
   assert.match(micKey, /onDoublePress=/);
   assert.doesNotMatch(micKey, /Desktop dictation toggled/);
+});
+
+test('Voice is a separate native Codex control with mute and end gestures', () => {
+  assert.match(controllerSource, /'voice-start'/);
+  assert.match(controllerSource, /'voice-toggle-mute'/);
+  assert.match(controllerSource, /'voice-end'/);
+  assert.match(controllerSource, /<CodexVoiceGlyph/);
+  assert.match(controllerSource, /onPress=\{\(\) => void handleVoicePress\(\)\}/);
+  assert.match(controllerSource, /onLongPress=\{\(\) => void handleVoiceLongPress\(\)\}/);
+  assert.match(controllerSource, /Audio never passes through the phone/);
+
+  // Voice must not replace or reuse the MIC push-to-talk lifecycle.
+  const micKey = componentBlock(
+    controllerSource,
+    'accessibilityLabel="Push to talk"',
+    '\n                  />',
+  );
+  assert.doesNotMatch(micKey, /voice-/);
 });
 
 test('the dial supports reasoning, navigation, scroll, click, and 500 ms settings hold', () => {

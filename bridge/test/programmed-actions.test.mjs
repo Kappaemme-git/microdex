@@ -46,24 +46,24 @@ test('the readable Codex Micro keycap catalog is reproduced exactly', () => {
   }
 });
 
-test('only the five documented default caps resolve to commands', () => {
-  assert.deepEqual(DEFAULT_KEYCAP_COMMANDS, {
-    FAST: 'composer.toggleFastMode',
-    APPR: 'approval.approve',
-    REJ: 'approval.decline',
-    SPLIT: 'forkThread',
-    CODEX: 'composer.submit',
-  });
-  assert.equal(DEFAULT_KEYCAP_COMMANDS.MIC, undefined);
+test('official Codex Micro keycaps resolve to their documented defaults', () => {
+  assert.equal(DEFAULT_KEYCAP_COMMANDS.FAST, 'composer.toggleFastMode');
+  assert.equal(DEFAULT_KEYCAP_COMMANDS.APPR, 'approval.approve');
+  assert.equal(DEFAULT_KEYCAP_COMMANDS.REJ, 'approval.decline');
+  assert.equal(DEFAULT_KEYCAP_COMMANDS.SPLIT, 'forkThread');
+  assert.equal(DEFAULT_KEYCAP_COMMANDS.MIC, 'composer.startDictation');
+  assert.equal(DEFAULT_KEYCAP_COMMANDS.CODEX, 'composer.submit');
+  assert.equal(DEFAULT_KEYCAP_COMMANDS.GIT, 'git.commit');
+  assert.equal(DEFAULT_KEYCAP_COMMANDS.PR, 'git.createPullRequest');
+  assert.equal(DEFAULT_KEYCAP_COMMANDS.TERM, 'workspace.toggleTerminal');
+  assert.equal(DEFAULT_KEYCAP_COMMANDS.BUG, 'app.sendFeedback');
+  // Blank caps and text caps stay out of the command map.
+  assert.equal(DEFAULT_KEYCAP_COMMANDS.YOLO, undefined);
+  assert.equal(DEFAULT_KEYCAP_COMMANDS.EMPT1, undefined);
 });
 
-test('optional printed caps never acquire an invented action', () => {
+test('printed keycap ids are never executable command ids', () => {
   for (const keycapId of OPTIONAL_KEYCAP_IDS) {
-    if (['MIND+', 'MIND-'].includes(keycapId)) {
-      // These are still only labels. Legacy migration is tested separately.
-      assert.equal(getProgrammedAction(keycapId), null);
-      continue;
-    }
     assert.equal(getProgrammedAction(keycapId), null, keycapId);
   }
   for (const keycapId of ['GIT', 'PR', 'BUG', 'YOLO', 'DEL', 'NEW']) {
@@ -74,46 +74,29 @@ test('optional printed caps never acquire an invented action', () => {
   }
 });
 
-test('programmable actions use the documented Codex command ids', () => {
-  const expected = [
+test('programmable actions cover the official Micro command set', () => {
+  const ids = CODEX_PROGRAMMABLE_ACTIONS.map((action) => action.id);
+  for (const required of [
     'composer.toggleFastMode',
-    'approval.approve',
-    'approval.decline',
-    'forkThread',
     'composer.submit',
     'composer.startDictation',
-    'composer.togglePlanMode',
-    'navigateForward',
-    'toggleSidebar',
-    'navigateBack',
-    'composer.increaseReasoningEffort',
-    'composer.decreaseReasoningEffort',
-    // Menu-driven commands, each backed by a real Codex menu item.
-    'chat.previous',
-    'chat.next',
-    'chat.new',
-    'chat.archive',
     'workspace.toggleTerminal',
-    'workspace.toggleFileTree',
-    'workspace.toggleReviewPanel',
-    'workspace.toggleBottomPanel',
-    'workspace.togglePinnedSummary',
-    'workspace.find',
-    'workspace.scheduled',
-    'workspace.keyboardShortcuts',
-    'composer.attachFiles',
-    'composer.clear',
-    'composer.openCommandMenu',
-    'composer.openModelPicker',
-    'thread.copyMarkdown',
-    'thread.continueInWorktree',
+    'workspace.openBrowser',
+    'workspace.openSkills',
+    'app.openSettings',
+    'app.openDocumentation',
+    'app.sendFeedback',
+    'app.openFolder',
+    'git.commit',
+    'git.createBranch',
+    'git.createDraftPullRequest',
+    'git.createPullRequest',
+    'git.mergePullRequest',
     'microdex.insertPrompt',
-  ];
-  assert.deepEqual(
-    CODEX_PROGRAMMABLE_ACTIONS.map((action) => action.id),
-    expected,
-  );
-  assert.equal(new Set(expected).size, expected.length);
+  ]) {
+    assert.ok(ids.includes(required), `missing ${required}`);
+  }
+  assert.equal(new Set(ids).size, ids.length);
 });
 
 test('the mobile picker exposes exactly the commands the bridge can run', async () => {

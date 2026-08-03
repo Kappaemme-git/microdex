@@ -42,6 +42,10 @@ export type RemoteState = {
     command: string | null;
   } | null;
   actionAvailability?: Record<string, ActionAvailability>;
+  voice?: {
+    state: 'inactive' | 'launching' | 'setup' | 'active';
+    muted: boolean;
+  };
   commandResult?: {
     action: string;
     applied: boolean;

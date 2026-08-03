@@ -36,15 +36,11 @@ import ChatDrawer, { type ChatDrawerHandle } from '@/components/chat-drawer';
 import {
   CodexMicroActionGlyph,
   CodexMicroGlyph,
+  CodexVoiceGlyph,
 } from '@/components/codex-micro-glyph';
 import { DeckLighting, type MicLight } from '@/components/deck-lighting';
 import { HardwareKey } from '@/components/hardware-key';
 import { Joystick } from '@/components/joystick';
-import {
-  CodexSymbol,
-  ExpandSymbol,
-  LightningSymbol,
-} from '@/components/key-symbols';
 import { ReasoningDial } from '@/components/reasoning-dial';
 import { DismissibleSheet, SheetHandlePill } from '@/components/sheet-dismiss-handle';
 import { RaisedShell, Screw, ShellPool, getSkeuo, useSkeuo } from '@/components/skeuo';
@@ -61,7 +57,7 @@ import {
   mobileAppInfo,
 } from '@/lib/bridge';
 import { Fonts } from '@/lib/fonts';
-import { suggestedKeycapForCommand } from '@/lib/keycap-catalog';
+import { KEYCAP_CATALOG, suggestedKeycapForCommand } from '@/lib/keycap-catalog';
 import {
   DEFAULT_MICRO_LAYOUT,
   MICRO_ACTIONS,
@@ -104,6 +100,7 @@ const EXPO_BRIDGE_TOKEN = __DEV__
 const FALLBACK_EFFORTS: ReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
 const COMPLETE_LIGHT_MS = 1_200;
 const KEY_RESULT_LIGHT_MS = 900;
+const LED_VOICE = '#8EA8FF';
 const ACTION_PROGRESS: Record<string, string> = {
   fast: 'Updating Fast Mode',
   reasoning: 'Updating reasoning',
@@ -113,6 +110,7 @@ const ACTION_PROGRESS: Record<string, string> = {
   decline: 'Declining request',
   fork: 'Creating fork',
   dictation: 'Opening dictation',
+  voice: 'Controlling Voice Chat',
   plan: 'Changing mode',
   forward: 'Moving forward',
   sidebar: 'Toggling sidebar',
@@ -174,6 +172,7 @@ const VISUAL_PREVIEW_REMOTE: RemoteState = {
   messageQueue: [],
   pendingApproval: null,
   actionAvailability: {},
+  voice: { state: 'inactive', muted: false },
 };
 const VISUAL_PREVIEW_STATUS: BridgeStatus = {
   connected: true,
@@ -357,6 +356,9 @@ export default function ControllerScreen() {
   const activeThreadIndex = remote?.threads.findIndex(
     (thread) => thread.id === activeThread?.id,
   ) ?? -1;
+  const voiceState = remote?.voice?.state ?? 'inactive';
+  const voiceActive = voiceState === 'active';
+  const voiceMuted = remote?.voice?.muted ?? false;
   const supportedReasoningEfforts = activeThread?.supportedReasoningEfforts?.length
     ? activeThread.supportedReasoningEfforts
     : FALLBACK_EFFORTS;
@@ -1318,6 +1320,90 @@ export default function ControllerScreen() {
     announce('Listening hands-free. Press Talk once to stop.');
   }, [announce, queueDictation]);
 
+  const handleVoicePress = useCallback(async () => {
+    if (!requireBridge() || !requireVerifiedSettings()) {
+      flashHardwareFeedback(LED.error);
+      return;
+    }
+    const action = voiceActive ? 'voice-toggle-mute' : 'voice-start';
+    setLoadingAction('voice');
+    announce(voiceActive ? 'Updating the Voice microphone…' : 'Opening Voice Chat on your Mac…');
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      const next = await bridgeRequest<RemoteState>(
+        bridgeUrl,
+        token,
+        '/api/desktop/action',
+        { method: 'POST', body: { action } },
+      );
+      requireVerifiedCommand(next);
+      setRemote(next);
+      if (next.voice?.state === 'setup') {
+        announce('Voice setup is open. Choose a voice on your Mac, then press VOICE again.');
+      } else if (next.voice?.state === 'launching') {
+        announce('Voice Chat opened on your Mac. Complete anything shown there, then press VOICE again.');
+      } else if (next.voice?.state === 'active') {
+        announce(next.voice.muted ? 'Voice Chat microphone muted.' : 'Voice Chat is live on your Mac.');
+      } else {
+        announce('Voice Chat command sent to your Mac.');
+      }
+      flashHardwareFeedback(LED.complete);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      handleActionError(error);
+      flashHardwareFeedback(LED.error);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setLoadingAction(null);
+    }
+  }, [
+    announce,
+    bridgeUrl,
+    flashHardwareFeedback,
+    handleActionError,
+    requireBridge,
+    requireVerifiedSettings,
+    token,
+    voiceActive,
+  ]);
+
+  const handleVoiceLongPress = useCallback(async () => {
+    if (!requireBridge() || !requireVerifiedSettings()) {
+      flashHardwareFeedback(LED.error);
+      return;
+    }
+    setLoadingAction('voice');
+    announce('Ending Voice Chat…');
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const next = await bridgeRequest<RemoteState>(
+        bridgeUrl,
+        token,
+        '/api/desktop/action',
+        { method: 'POST', body: { action: 'voice-end' } },
+      );
+      requireVerifiedCommand(next);
+      setRemote(next);
+      announce('Voice Chat ended on your Mac.');
+      flashHardwareFeedback(LED.complete);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      handleActionError(error);
+      flashHardwareFeedback(LED.error);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setLoadingAction(null);
+    }
+  }, [
+    announce,
+    bridgeUrl,
+    flashHardwareFeedback,
+    handleActionError,
+    requireBridge,
+    requireVerifiedSettings,
+    token,
+  ]);
+
   useEffect(() => () => {
     if (dictationReleaseTimer.current) {
       clearTimeout(dictationReleaseTimer.current);
@@ -1454,14 +1540,23 @@ export default function ControllerScreen() {
       DEFAULT_MICRO_LAYOUT[slotIndex] ??
       (`EMPT${Math.min(slotIndex + 1, 5)}` as MicroKeycapId);
     const fallback = defaultActionForKeycap(keycapId);
+    const currentActionId = programmedActionId(current);
     setEditingSlot(slotIndex);
     setChosenActionId(
-      programmedActionId(current) ??
-      (fallback?.type === 'command' ? fallback.commandId : null),
+      currentActionId ??
+      (fallback?.type === 'command'
+        ? fallback.commandId
+        : fallback?.type === 'prompt'
+          ? 'microdex.insertPrompt'
+          : null),
     );
     setChosenKeycapId(keycapId);
     setCustomPrompt(
-      current?.action?.type === 'prompt' ? current.action.text : '',
+      current?.action?.type === 'prompt'
+        ? current.action.text
+        : fallback?.type === 'prompt'
+          ? fallback.text
+          : '',
     );
     setActionSearch('');
     void Haptics.selectionAsync();
@@ -1861,7 +1956,7 @@ export default function ControllerScreen() {
           <View style={styles.connectionGate}>
             <View style={[styles.gateBrandBar, { paddingTop: Math.max(insets.top, 14) }]}>
               <View style={styles.gateBrandMark}>
-                <CodexSymbol size={13} color={theme.bg} />
+                <CodexMicroGlyph keycapId="CODEX" size={13} color={theme.bg} />
               </View>
               <Text style={styles.gateBrandName}>Microdex</Text>
             </View>
@@ -2180,7 +2275,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Toggle Fast Mode"
-                    symbol={<LightningSymbol color={skeuo.icon} />}
+                    symbol={<CodexMicroGlyph keycapId="FAST" color={skeuo.icon} />}
                     unavailableReason={unavailableReason('FAST')}
                     disabled={loadingAction === 'fast'}
                     onPress={() => void toggleFast()}
@@ -2189,7 +2284,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Approve current request"
-                    icon="check-circle-outline"
+                    symbol={<CodexMicroGlyph keycapId="APPR" color={skeuo.icon} />}
                     unavailableReason={unavailableReason('APPR')}
                     disabled={loadingAction === 'approve'}
                     active={Boolean(remote?.pendingApproval)}
@@ -2200,7 +2295,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Decline current request"
-                    icon="close-circle-outline"
+                    symbol={<CodexMicroGlyph keycapId="REJ" color={skeuo.icon} />}
                     unavailableReason={unavailableReason('REJ')}
                     disabled={loadingAction === 'decline'}
                     onPress={() => void resolveApproval('decline')}
@@ -2209,7 +2304,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Continue in a new chat"
-                    symbol={<ExpandSymbol color={skeuo.icon} />}
+                    symbol={<CodexMicroGlyph keycapId="SPLIT" color={skeuo.icon} />}
                     unavailableReason={unavailableReason('SPLIT')}
                     disabled={loadingAction === 'fork'}
                     onPress={() => void forkCurrentTask()}
@@ -2267,10 +2362,10 @@ export default function ControllerScreen() {
                     <View style={styles.touchCenter} />
                   </View>
                 </Pressable>
-                <View style={styles.wideSlot}>
+                <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Push to talk"
-                    icon="microphone-outline"
+                    symbol={<CodexMicroGlyph keycapId="MIC" color={skeuo.icon} />}
                     active={dictationActive}
                     glowColor={dictationActive ? LED_RECORDING : undefined}
                     unavailableReason={unavailableReason('MIC')}
@@ -2282,8 +2377,27 @@ export default function ControllerScreen() {
                 </View>
                 <View style={styles.squareSlot}>
                   <HardwareKey
+                    accessibilityLabel={
+                      voiceActive
+                        ? `${voiceMuted ? 'Unmute' : 'Mute'} Voice Chat microphone; hold to end`
+                        : 'Start Voice Chat on the Mac'
+                    }
+                    symbol={<CodexVoiceGlyph color={skeuo.icon} />}
+                    active={voiceActive || voiceState === 'setup' || voiceState === 'launching'}
+                    glowColor={
+                      voiceActive || voiceState === 'setup' || voiceState === 'launching'
+                        ? LED_VOICE
+                        : undefined
+                    }
+                    disabled={loadingAction === 'voice'}
+                    onPress={() => void handleVoicePress()}
+                    onLongPress={() => void handleVoiceLongPress()}
+                  />
+                </View>
+                <View style={styles.squareSlot}>
+                  <HardwareKey
                     accessibilityLabel="Send message"
-                    symbol={<CodexSymbol color={skeuo.icon} />}
+                    symbol={<CodexMicroGlyph keycapId="CODEX" color={skeuo.icon} />}
                     unavailableReason={unavailableReason('CODEX')}
                     disabled={loadingAction === 'send'}
                     onPress={openRemoteComposer}
@@ -2603,9 +2717,45 @@ export default function ControllerScreen() {
               </>
             }>
             <Text style={styles.sheetBody}>
-              Assign a Codex command to this key. The printed keycap follows the
-              command you pick.
+              Pick the printed keycap from your tray, then assign its Codex
+              command. Defaults match the official Micro mapping.
             </Text>
+            <Text style={styles.keycapSectionLabel}>KEYCAP LABEL</Text>
+            <View style={styles.keycapGrid}>
+              {KEYCAP_CATALOG.map((keycap) => {
+                const selected = chosenKeycapId === keycap.id;
+                return (
+                  <Pressable
+                    key={keycap.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${keycap.name} keycap`}
+                    accessibilityState={{ selected }}
+                    onPress={() => {
+                      setChosenKeycapId(keycap.id);
+                      const defaults = defaultActionForKeycap(keycap.id);
+                      if (defaults?.type === 'command') {
+                        setChosenActionId(defaults.commandId);
+                        setCustomPrompt('');
+                      } else if (defaults?.type === 'prompt') {
+                        setChosenActionId('microdex.insertPrompt');
+                        setCustomPrompt(defaults.text);
+                      }
+                      void Haptics.selectionAsync();
+                    }}
+                    style={({ pressed }) => [
+                      styles.keycapChip,
+                      selected && styles.keycapChipSelected,
+                      pressed && styles.actionRowPressed,
+                    ]}>
+                    <CodexMicroGlyph
+                      keycapId={keycap.id}
+                      size={18}
+                      color={selected ? theme.text : theme.textMuted}
+                    />
+                  </Pressable>
+                );
+              })}
+            </View>
             <View style={styles.searchWrap}>
               <MaterialCommunityIcons name="magnify" size={18} color={theme.textFaint} />
               <TextInput
@@ -2632,14 +2782,12 @@ export default function ControllerScreen() {
                     onPress={() => {
                       setChosenActionId(action.id);
                       if (!action.custom) setCustomPrompt('');
-                      // The cap is no longer chosen by hand, so it always
-                      // follows the command. A custom prompt keeps a blank.
                       const suggested = suggestedKeycapForCommand(
                         action.id === 'microdex.insertPrompt'
                           ? null
                           : (action.id as ProgrammableCommandId),
                       );
-                      setChosenKeycapId(suggested ?? 'EMPT1');
+                      if (suggested) setChosenKeycapId(suggested);
                       void Haptics.selectionAsync();
                     }}
                     style={({ pressed }) => [
@@ -2800,16 +2948,23 @@ export default function ControllerScreen() {
               <GuideItem
                 styles={styles}
                 theme={theme}
+                icon="waveform"
+                title="Voice Chat"
+                body="VOICE opens native Codex Voice Chat on the Mac. While it is live, tap to mute or unmute and hold to end. MIC remains desktop dictation. Audio never passes through the phone."
+              />
+              <GuideItem
+                styles={styles}
+                theme={theme}
                 icon="label-outline"
-                title="Keycap labels"
-                body="GIT, PR, BUG, YOLO and the other interchangeable caps are labels only. They do nothing until you assign one of the verified commands below."
+                title="Official keycaps"
+                body="Every printed cap from the tray has its official Codex default: GIT commits, PR opens a pull request, YOLO inserts :yolo:, and so on. You can still reassign any slot."
               />
 
               <View style={styles.guideSectionIntro}>
                 <Text style={styles.guideSectionTitle}>Assignable keys</Text>
                 <Text style={styles.guideSectionBody}>
-                  These are the commands Microdex can execute reliably. Open Customize keys, choose
-                  any visual keycap, assign a command, and save.
+                  These are the commands Microdex can execute. Open Customize keys, pick a
+                  keycap from the tray artwork, confirm or change its command, and save.
                 </Text>
               </View>
               {guideGroups.map((group) => (
@@ -3714,6 +3869,33 @@ function createStyles(theme: ThemePalette) {
       alignItems: 'center', gap: 8,
     },
     searchInput: { flex: 1, height: '100%', color: theme.text, fontSize: 13, fontWeight: '600' },
+    keycapSectionLabel: {
+      marginBottom: 8,
+      fontSize: 8,
+      fontWeight: '900',
+      letterSpacing: 0.7,
+      color: theme.textFaint,
+    },
+    keycapGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 7,
+      marginBottom: 14,
+    },
+    keycapChip: {
+      width: 40,
+      height: 40,
+      borderRadius: 11,
+      borderWidth: 1,
+      borderColor: theme.border,
+      backgroundColor: theme.surfaceInput,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    keycapChipSelected: {
+      borderColor: theme.text,
+      backgroundColor: theme.surface,
+    },
     actionCatalog: { paddingBottom: 10 },
     actionRow: {
       minHeight: 58, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 14,

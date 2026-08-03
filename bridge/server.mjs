@@ -164,6 +164,10 @@ async function remoteState() {
   const state = mergeVisibleDesktopState(appServerState, desktop);
   return {
     ...state,
+    voice: {
+      state: desktop?.voiceActive ? 'active' : 'inactive',
+      muted: Boolean(desktop?.voiceMuted),
+    },
     messageQueue: messageQueue.list(),
     actionAvailability: buildActionAvailability({
       state,
@@ -705,6 +709,9 @@ p{opacity:.75;line-height:1.45;max-width:28rem}</style></head>
         'dictation',
         'dictation-start',
         'dictation-stop',
+        'voice-start',
+        'voice-toggle-mute',
+        'voice-end',
         'send',
         'sidebar',
         'back',
@@ -712,11 +719,18 @@ p{opacity:.75;line-height:1.45;max-width:28rem}</style></head>
       ].includes(body.action)) {
         return sendJson(response, 400, { error: 'Invalid desktop action.' });
       }
-      await executeCodexDesktopAction(body.action);
+      const desktopResult = await executeCodexDesktopAction(body.action);
+      const nextState = withVerifiedCommand(await remoteState(), body.action, 'desktop');
+      if (desktopResult.voiceState) {
+        nextState.voice = {
+          state: desktopResult.voiceState,
+          muted: Boolean(desktopResult.voiceMuted),
+        };
+      }
       return sendJson(
         response,
         200,
-        withVerifiedCommand(await remoteState(), body.action, 'desktop'),
+        nextState,
       );
     }
 
