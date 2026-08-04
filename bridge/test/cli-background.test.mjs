@@ -10,6 +10,10 @@ const serverSource = await readFile(
   new URL('../server.mjs', import.meta.url),
   'utf8',
 );
+const tunnelSource = await readFile(
+  new URL('../lib/remote-tunnel.mjs', import.meta.url),
+  'utf8',
+);
 
 test('setup installs an automatic macOS LaunchAgent backed by a stable runtime', () => {
   assert.match(cliSource, /microdex setup/);
@@ -25,6 +29,16 @@ test('a running background bridge can issue a fresh one-time pairing QR', () => 
   assert.match(cliSource, /\/api\/pair\/new/);
   assert.match(serverSource, /url\.pathname === '\/api\/pair\/new'/);
   assert.match(serverSource, /pairingSession = new PairingSession/);
+});
+
+test('pairing prefers verified HTTPS remote access without opening a router port', () => {
+  assert.match(serverSource, /createRemoteTunnel/);
+  assert.match(serverSource, /remoteTunnelState\.ready \? remoteTunnelState\.url/);
+  assert.match(cliSource, /waitForRemotePairingDetails/);
+  assert.match(cliSource, /Ready on Wi-Fi or mobile data/);
+  assert.match(tunnelSource, /http:\/\/127\.0\.0\.1:\$\{port\}/);
+  assert.match(tunnelSource, /trycloudflare\\\.com/);
+  assert.doesNotMatch(tunnelSource, /port forwarding|upnp/i);
 });
 
 test('the CLI exposes lifecycle commands for the background service', () => {

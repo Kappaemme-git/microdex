@@ -18,7 +18,17 @@ export function normalizeBridgeUrl(value: string) {
   if (!parsed.hostname || parsed.username || parsed.password) {
     throw new Error('The pairing code contains an invalid bridge address.');
   }
-  return parsed.toString().replace(/\/$/, '');
+  const hostname = parsed.hostname.toLowerCase();
+  const isPrivateIpv4 = /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(hostname);
+  const isLoopback = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  const isLocalName = hostname.endsWith('.local');
+  if (parsed.protocol === 'http:' && !isPrivateIpv4 && !isLoopback && !isLocalName) {
+    throw new Error('Remote Microdex pairing requires a secure HTTPS address.');
+  }
+  if (parsed.pathname !== '/' || parsed.search || parsed.hash) {
+    throw new Error('The pairing code contains an invalid bridge address.');
+  }
+  return parsed.origin;
 }
 
 /**
@@ -139,10 +149,10 @@ export async function claimPairingPayload(payload: PairingPayload): Promise<Pair
     return { bridgeUrl: normalizeBridgeUrl(payload.bridgeUrl), token: result.token };
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('The pairing request timed out. Check that both devices use the same Wi-Fi.');
+      throw new Error('The pairing request timed out. Check the phone and Mac internet connections.');
     }
     if (error instanceof TypeError) {
-      throw new Error('The Mac could not be reached. Check Wi-Fi and the Microdex background service.');
+      throw new Error('The Mac could not be reached. Check both internet connections and the Microdex background service.');
     }
     throw error;
   } finally {

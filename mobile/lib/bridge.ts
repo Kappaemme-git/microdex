@@ -95,6 +95,11 @@ export type BridgeStatus = {
     visibleDesktopRouting?: boolean;
     nativeHardware?: boolean;
   };
+  connection?: {
+    remoteAccess: string;
+    remoteReady: boolean;
+    transport: 'https' | 'local';
+  };
   fastMode: boolean;
   reasoningEffort: ReasoningEffort;
   configPath: string;
@@ -208,12 +213,12 @@ export async function bridgeRequest<T>(
     if (error instanceof BridgeConnectionError) throw error;
     if (error instanceof Error && error.name === 'AbortError') {
       throw new BridgeConnectionError(
-        'The bridge is not responding. Check Wi-Fi and the IP address.',
+        'The bridge is not responding. Check the internet connection and keep Microdex running on the Mac.',
       );
     }
     if (error instanceof TypeError) {
       throw new BridgeConnectionError(
-        'The bridge connection was lost. Check Wi-Fi and keep Microdex running on the computer.',
+        'The bridge connection was lost. Check the phone and Mac internet connections.',
       );
     }
     throw error;

@@ -467,19 +467,45 @@ async function requestPairingDetails() {
   return payload;
 }
 
+async function waitForRemotePairingDetails(timeoutMs = 90_000) {
+  const startedAt = Date.now();
+  let latest = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    latest = await requestPairingDetails();
+    // Older bridge builds do not report tunnel state. Preserve their local QR
+    // behavior instead of making the updated CLI wait forever.
+    if (!latest.remoteAccess || latest.remoteAccess.ready) return latest;
+    if (latest.remoteAccess.status === 'disabled') return latest;
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
+  return latest;
+}
+
 async function showPairingQr({ header = true } = {}) {
   if (!await bridgeHealth()) {
     throw new Error('The Microdex background bridge is offline. Run microdex setup first.');
   }
-  const details = await requestPairingDetails();
   if (header) printHeader(VERSION);
   printCheck('Background bridge', 'Running automatically');
   console.log('');
-  printStep(1, 'Open Microdex on your iPhone');
-  printStep(2, 'Tap Scan pairing QR');
+  printStep(1, 'Preparing secure connection', 'No shared Wi-Fi required');
+  const details = await waitForRemotePairingDetails();
+  if (details.remoteAccess?.ready) {
+    printCheck('Remote access', 'Ready on Wi-Fi or mobile data');
+  } else {
+    printWarning(
+      'Remote access unavailable',
+      details.remoteAccess?.error || 'The fallback QR requires the same Wi-Fi',
+    );
+  }
+  printStep(2, 'Open Microdex and tap Scan pairing QR');
   printQr(details.pairingUrl, qrcode);
   console.log(`  ${ui.dim(`Can't scan? ${details.pairingUrl}`)}`);
-  console.log(`  ${ui.dim('One-time QR · expires in 10 minutes')}\n`);
+  console.log(`  ${ui.dim(
+    details.remoteAccess?.ready
+      ? 'One-time QR · expires in 10 minutes · encrypted connection'
+      : 'One-time QR · expires in 10 minutes · local network fallback',
+  )}\n`);
 }
 
 function cleanLaunchctlError(error) {
@@ -683,6 +709,17 @@ async function status() {
     }
     if (await exists(launchAgentPath)) printCheck('Automatic startup', 'Enabled');
     else printWarning('Automatic startup', 'Not installed');
+    if (health.remoteAccess?.ready) {
+      printCheck('Remote access', 'Ready on Wi-Fi or mobile data');
+    } else if (health.remoteAccess?.status === 'disabled') {
+      printWarning('Remote access', 'Disabled; same Wi-Fi required');
+    } else if (health.remoteAccess?.status === 'cooldown') {
+      printWarning('Remote access', 'Cloudflare cooldown; retrying automatically');
+    } else if (health.remoteAccess?.status) {
+      printWarning('Remote access', 'Connecting in the background');
+    } else {
+      printWarning('Remote access', 'Update the bridge runtime to enable it');
+    }
   } else {
     printFailure('Bridge offline', `Nothing is listening on port ${port}`);
     process.exitCode = 1;

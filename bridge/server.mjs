@@ -32,6 +32,7 @@ import {
 import { attachRemoteEvents } from './lib/remote-events.mjs';
 import { RemoteMessageQueue } from './lib/remote-message-queue.mjs';
 import { PairingSession } from './lib/pairing-session.mjs';
+import { createRemoteTunnel } from './lib/remote-tunnel.mjs';
 import {
   applyFastSetting,
   applyReasoningSetting,
@@ -54,12 +55,20 @@ import {
 const bridgeDir = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.MICRODEX_PORT || 3210);
 const host = process.env.MICRODEX_HOST || '0.0.0.0';
-const accessToken = process.env.MICRODEX_TOKEN || randomBytes(6).toString('hex').toUpperCase();
+const accessToken = process.env.MICRODEX_TOKEN || randomBytes(32).toString('base64url');
 const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+const microdexHome = process.env.MICRODEX_HOME || path.join(os.homedir(), '.microdex');
 const configPath = process.env.MICRODEX_CONFIG_PATH || path.join(codexHome, 'config.toml');
 const hooksDir = process.env.MICRODEX_HOOKS_DIR || path.join(bridgeDir, 'hooks');
 const backgroundMode = process.env.MICRODEX_BACKGROUND === '1';
+const remoteAccessEnabled = process.env.MICRODEX_REMOTE_ACCESS !== '0';
 let pairingSession = new PairingSession({ accessToken });
+const remoteTunnel = createRemoteTunnel({
+  port,
+  stateDir: microdexHome,
+  enabled: remoteAccessEnabled,
+});
+let remoteTunnelState = remoteTunnel.state();
 const codex = new CodexAppServer();
 let remoteEvents = null;
 const desktopReady = ensureDesktopCompanion().catch((error) => ({
@@ -146,6 +155,11 @@ async function publicStatus() {
       actionAvailability: true,
       visibleDesktopRouting: true,
       nativeHardware: nativeShim.state().connected,
+    },
+    connection: {
+      remoteAccess: remoteTunnelState.status,
+      remoteReady: remoteTunnelState.ready,
+      transport: remoteTunnelState.ready ? 'https' : 'local',
     },
     fastMode: current.fastMode,
     reasoningEffort: current.reasoningEffort,
@@ -341,7 +355,11 @@ function bridgeAddresses() {
 }
 
 function pairingDetails() {
-  const addresses = bridgeAddresses();
+  const localAddresses = bridgeAddresses();
+  const remoteAddress = remoteTunnelState.ready ? remoteTunnelState.url : null;
+  const addresses = remoteAddress
+    ? [remoteAddress, ...localAddresses.filter((address) => address !== remoteAddress)]
+    : localAddresses;
   const urls = addresses.map((address) => {
     const pairingUrl = new URL('/pair', `${address}/`);
     pairingUrl.searchParams.set('code', pairingSession.code);
@@ -351,6 +369,12 @@ function pairingDetails() {
     pairingUrl: urls[0],
     pairingUrls: urls,
     expiresAt: pairingSession.expiresAt,
+    remoteAccess: {
+      status: remoteTunnelState.status,
+      ready: remoteTunnelState.ready,
+      url: remoteAddress,
+      error: remoteTunnelState.error,
+    },
   };
 }
 
@@ -365,6 +389,10 @@ const server = http.createServer(async (request, response) => {
         name: BRIDGE_NAME,
         version: BRIDGE_VERSION,
         protocolVersion: BRIDGE_PROTOCOL_VERSION,
+        remoteAccess: {
+          status: remoteTunnelState.status,
+          ready: remoteTunnelState.ready,
+        },
       });
     }
 
@@ -381,7 +409,13 @@ const server = http.createServer(async (request, response) => {
             : 'Invalid pairing code.';
         return sendJson(response, validation.reason === 'expired' ? 410 : 401, { error: message });
       }
-      const bridgeUrl = `http://${request.headers.host || `127.0.0.1:${port}`}`;
+      const forwardedProtocol = request.headers['x-forwarded-proto'];
+      const bridgeProtocol = (
+        Array.isArray(forwardedProtocol) ? forwardedProtocol[0] : forwardedProtocol
+      ) === 'https'
+        ? 'https'
+        : 'http';
+      const bridgeUrl = `${bridgeProtocol}://${request.headers.host || `127.0.0.1:${port}`}`;
       // Three slashes on purpose. `microdex://pair` parses `pair` as the host and
       // leaves the path empty, so Expo Router receives nothing to match and the
       // app opens on "Unmatched Route". The empty-host form gives a real `/pair`.
@@ -777,7 +811,6 @@ server.listen(port, host, () => {
   void launchDesktopQueueMenu({ port, token: accessToken }).catch((error) => {
     console.error(`Microdex queue menu unavailable: ${error?.message || error}`);
   });
-  const { pairingUrl } = pairingDetails();
   const preferredAddress = bridgeAddresses()[0];
 
   if (backgroundMode) {
@@ -787,14 +820,11 @@ server.listen(port, host, () => {
     printCheck('Codex runtime', 'Connected');
     printCheck('Local bridge', `${preferredAddress}`);
     console.log('');
-    printStep(1, 'Open Microdex on your iPhone');
-    printStep(2, 'Tap Pair Mac → Scan pairing QR');
-    printStep(3, 'Scan this one-time code');
-    printQr(pairingUrl, qrcode);
-    console.log(`  ${ui.dim(`Can't scan? ${pairingUrl}`)}`);
-    console.log(`  ${ui.dim('One-time QR · expires in 10 minutes · keep this window open')}`);
-    console.log(`  ${ui.dim('Press Control-C to stop Microdex.')}\n`);
+    if (remoteAccessEnabled) {
+      printStep(1, 'Preparing secure remote access', 'Works on Wi-Fi or mobile data');
+    }
   }
+  remoteTunnel.start();
   void desktopReady.then(async (desktop) => {
     if (desktop.available && !desktop.trusted) {
       await desktopControlStatus({ prompt: true });
@@ -810,10 +840,54 @@ server.listen(port, host, () => {
   });
 });
 
+let lastPrintedPairingUrl = null;
+let foregroundFallbackTimer = null;
+
+function printForegroundPairing(remoteReady) {
+  if (backgroundMode) return;
+  const { pairingUrl } = pairingDetails();
+  if (pairingUrl === lastPrintedPairingUrl) return;
+  lastPrintedPairingUrl = pairingUrl;
+  console.log('');
+  if (remoteReady) printCheck('Remote access', 'Ready on Wi-Fi or mobile data');
+  else printWarning('Remote access unavailable', 'This fallback QR requires the same Wi-Fi');
+  printStep(2, 'Open Microdex and tap Scan pairing QR');
+  printStep(3, 'Scan this one-time code');
+  printQr(pairingUrl, qrcode);
+  console.log(`  ${ui.dim(`Can't scan? ${pairingUrl}`)}`);
+  console.log(`  ${ui.dim('One-time QR · expires in 10 minutes · keep this window open')}`);
+  console.log(`  ${ui.dim('Press Control-C to stop Microdex.')}\n`);
+}
+
+const unsubscribeRemoteTunnel = remoteTunnel.subscribe((state) => {
+  remoteTunnelState = state;
+  if (state.ready) {
+    if (foregroundFallbackTimer) clearTimeout(foregroundFallbackTimer);
+    foregroundFallbackTimer = null;
+    if (backgroundMode) console.log(`Microdex remote access ready at ${state.url}`);
+    else printForegroundPairing(true);
+  } else if (
+    backgroundMode &&
+    ['offline', 'cooldown'].includes(state.status) &&
+    state.error
+  ) {
+    console.error(`Microdex remote access: ${state.error}`);
+  }
+});
+
+if (!remoteAccessEnabled) {
+  printForegroundPairing(false);
+} else if (!backgroundMode) {
+  foregroundFallbackTimer = setTimeout(() => printForegroundPairing(false), 45_000);
+}
+
 function shutdown() {
   console.log('');
   console.log(`  ${ui.dim('Stopping Microdex…')}`);
   closeDesktopQueueMenu();
+  if (foregroundFallbackTimer) clearTimeout(foregroundFallbackTimer);
+  unsubscribeRemoteTunnel();
+  remoteTunnel.close();
   remoteEvents.close();
   unsubscribeMessageQueue();
   messageQueue.close();

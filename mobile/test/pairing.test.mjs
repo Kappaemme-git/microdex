@@ -37,6 +37,13 @@ test('pairing URLs round-trip without changing credentials', () => {
 
 test('one-time pairing QR codes are parsed without exposing a persistent token', () => {
   assert.deepEqual(
+    parsePairingUrl('https://fresh-microdex.trycloudflare.com/pair?code=REMOTE-CODE'),
+    {
+      bridgeUrl: 'https://fresh-microdex.trycloudflare.com',
+      code: 'REMOTE-CODE',
+    },
+  );
+  assert.deepEqual(
     parsePairingUrl('http://192.168.1.17:3210/pair?code=ONE-TIME-CODE'),
     {
       bridgeUrl: 'http://192.168.1.17:3210',
@@ -56,8 +63,14 @@ test('one-time pairing QR codes are parsed without exposing a persistent token',
 
 test('bridge addresses are normalized and unsafe URL shapes are rejected', () => {
   assert.equal(normalizeBridgeUrl(' http://192.168.1.17:3210/ '), 'http://192.168.1.17:3210');
+  assert.equal(
+    normalizeBridgeUrl('https://fresh-microdex.trycloudflare.com/'),
+    'https://fresh-microdex.trycloudflare.com',
+  );
   assert.throws(() => normalizeBridgeUrl('ftp://192.168.1.17/file'));
   assert.throws(() => normalizeBridgeUrl('http://user:pass@192.168.1.17:3210'));
+  assert.throws(() => normalizeBridgeUrl('http://public-bridge.example.com'));
+  assert.throws(() => normalizeBridgeUrl('https://public-bridge.example.com/unexpected'));
 });
 
 test('foreign and incomplete QR codes are rejected', () => {
