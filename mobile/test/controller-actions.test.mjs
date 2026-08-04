@@ -14,6 +14,10 @@ const hardwareKeySource = await readFile(
   new URL('../components/hardware-key.tsx', import.meta.url),
   'utf8',
 );
+const joystickSource = await readFile(
+  new URL('../components/joystick.tsx', import.meta.url),
+  'utf8',
+);
 const chatDrawerSource = await readFile(
   new URL('../components/chat-drawer.tsx', import.meta.url),
   'utf8',
@@ -58,6 +62,16 @@ test('every joystick direction controls the matching Codex Micro desktop action'
   }
 });
 
+test('the joystick follows a real drag, commits on release, and springs home', () => {
+  assert.match(joystickSource, /Gesture\.Pan\(\)/);
+  assert.match(joystickSource, /Math\.hypot\(event\.translationX, event\.translationY\)/);
+  assert.match(joystickSource, /travel\.value \/ distance/);
+  assert.match(joystickSource, /runOnJS\(commitDirection\)\(direction\)/);
+  assert.match(joystickSource, /translateX\.value = withSpring\(0/);
+  assert.match(joystickSource, /translateY\.value = withSpring\(0/);
+  assert.doesNotMatch(joystickSource, /<Pressable/);
+});
+
 test('remote command buttons use stable action ids', () => {
   for (const actionId of ['send', 'approve', 'decline', 'fork', 'dictation']) {
     assert.match(controllerSource, new RegExp(`'${actionId}'`));
@@ -91,6 +105,10 @@ test('programmable keys have a visible manager with replace and remove controls'
   assert.match(controllerSource, /Customize keys/i);
   assert.match(controllerSource, /visible=\{keyManagerVisible\}/);
   assert.match(controllerSource, /removeProgrammedKey/);
+  assert.match(controllerSource, /clearAllProgrammedKeys/);
+  assert.match(controllerSource, /accessibilityLabel="Clear all programmable keys"/);
+  assert.match(controllerSource, /setProgrammedKeys\(nextKeys\)/);
+  assert.match(controllerSource, /All programmable keys cleared/);
   assert.match(controllerSource, /<CentralIcon name="trash"/);
   assert.match(controllerSource, /Choose an empty key or replace an existing one/);
 });
@@ -214,6 +232,24 @@ test('the mobile draft uses the desktop remote-send endpoint', () => {
   assert.match(controllerSource, /'\/api\/remote\/send'/);
   assert.match(controllerSource, /Message added to the Codex queue/);
   assert.doesNotMatch(controllerSource, /clientUserMessageId/);
+});
+
+test('the fixed Send key submits either the Microdex draft or the desktop composer', () => {
+  const sendDraftHandler = controllerSource.slice(
+    controllerSource.indexOf('const sendDraft'),
+    controllerSource.indexOf('const removeQueuedMessage'),
+  );
+  assert.ok(
+    sendDraftHandler.indexOf("if (!hasMobileDraft)") <
+      sendDraftHandler.indexOf("if (!activeThread)"),
+    'desktop Send must not require a selected Microdex thread',
+  );
+  assert.match(sendDraftHandler, /\{ action: 'send' \}/);
+  assert.match(sendDraftHandler, /body: \{ threadId: activeThread\.id, text \}/);
+  assert.doesNotMatch(sendDraftHandler, /requireActionAvailable\('CODEX'\)/);
+  assert.match(controllerSource, /accessibilityLabel="Send Microdex draft or desktop composer"/);
+  assert.match(controllerSource, /onPress=\{\(\) => void sendDraft\(\)\}/);
+  assert.match(controllerSource, /onLongPress=\{openRemoteComposer\}/);
 });
 
 test('queued messages stay visible and can be removed before sending', () => {

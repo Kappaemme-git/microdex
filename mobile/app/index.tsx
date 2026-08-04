@@ -707,7 +707,11 @@ export default function ControllerScreen() {
       setScannerVisible(false);
       reconnectAttempt.current = 0;
       credentialRejected.current = false;
-      announce('Bridge connected. The keys now control Codex.');
+      announce(
+        candidateUrl.trim().startsWith('https://')
+          ? 'Secure remote bridge connected. Microdex now works on Wi-Fi or mobile data.'
+          : 'Local bridge connected. The keys now control Codex.',
+      );
       if (interactive) {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
@@ -832,6 +836,8 @@ export default function ControllerScreen() {
         refreshError,
         networkType: networkState.type,
         networkConnected: networkState.isConnected,
+        transport: bridgeUrl.startsWith('https://') ? 'secure-remote' : 'local',
+        remoteAccess: latestStatus?.connection ?? null,
       },
       remote: {
         online: Boolean(remote?.online),
@@ -1619,6 +1625,30 @@ export default function ControllerScreen() {
     setEditingSlot(null);
   }, [editingSlot, removeProgrammedKey]);
 
+  const clearAllProgrammedKeys = useCallback(() => {
+    if (!programmedKeys.some(Boolean)) return;
+    Alert.alert(
+      'Clear all programmable keys?',
+      'This removes every custom key assignment. The fixed Microdex controls stay unchanged.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear all',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              const nextKeys = programmedKeys.map(() => null);
+              setProgrammedKeys(nextKeys);
+              await writeStoredValue(STORAGE_PROGRAMMED_KEYS, JSON.stringify(nextKeys));
+              announce('All programmable keys cleared.');
+              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            })();
+          },
+        },
+      ],
+    );
+  }, [announce, programmedKeys]);
+
   const runProgrammedKey = useCallback(async (slotIndex: number) => {
     const programmed = programmedKeys[slotIndex];
     if (!programmed) {
@@ -1671,20 +1701,20 @@ export default function ControllerScreen() {
   ]);
 
   const sendDraft = useCallback(async () => {
-    if (!activeThread) {
-      announce('Select a Codex task first.', true);
-      return;
-    }
     const hasMobileDraft = Boolean(draft.trim());
     const text = draft.trim();
     if (!hasMobileDraft) {
-      if (!requireActionAvailable('CODEX')) return;
       await remoteAction(
         '/api/desktop/action',
         { action: 'send' },
         'send',
         'Desktop composer sent.',
       );
+      return;
+    }
+
+    if (!activeThread) {
+      announce('Select a Codex task first.', true);
       return;
     }
 
@@ -1732,7 +1762,6 @@ export default function ControllerScreen() {
     draft,
     handleActionError,
     remoteAction,
-    requireActionAvailable,
     requireBridge,
     token,
   ]);
@@ -2398,11 +2427,12 @@ export default function ControllerScreen() {
                 </View>
                 <View style={styles.squareSlot}>
                   <HardwareKey
-                    accessibilityLabel="Send message"
+                    accessibilityLabel="Send Microdex draft or desktop composer"
                     symbol={<CodexMicroGlyph keycapId="CODEX" color={skeuo.icon} />}
-                    unavailableReason={unavailableReason('CODEX')}
+                    unavailableReason={draft.trim() ? unavailableReason('CODEX') : undefined}
                     disabled={loadingAction === 'send'}
-                    onPress={openRemoteComposer}
+                    onPress={() => void sendDraft()}
+                    onLongPress={openRemoteComposer}
                   />
                 </View>
               </View>
@@ -2672,6 +2702,19 @@ export default function ControllerScreen() {
                 );
               })}
             </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Clear all programmable keys"
+              disabled={!programmedKeys.some(Boolean)}
+              onPress={clearAllProgrammedKeys}
+              style={({ pressed }) => [
+                styles.clearAllKeysButton,
+                !programmedKeys.some(Boolean) && styles.clearAllKeysButtonDisabled,
+                pressed && styles.removeKeyButtonPressed,
+              ]}>
+              <CentralIcon name="trash" size={17} color={theme.danger} />
+              <Text style={styles.clearAllKeysText}>CLEAR ALL</Text>
+            </Pressable>
           </DismissibleSheet>
         </View>
         </GestureHandlerRootView>
@@ -2899,7 +2942,7 @@ export default function ControllerScreen() {
                 theme={theme}
                 actionId="composer.startDictation"
                 title="Talk and Send"
-                body="Hold Talk while speaking and release to stop. Double-press Talk to keep listening hands-free; press it once more to stop. Send submits the desktop composer."
+                body="Hold Talk while speaking and release to stop. Double-press Talk to keep listening hands-free. Send submits a Microdex draft when present, otherwise it submits the desktop composer."
               />
               <GuideItem
                 styles={styles}
@@ -3873,6 +3916,15 @@ function createStyles(theme: ThemePalette) {
     removeKeyButtonDisabled: { opacity: 0.3 },
     removeKeyButtonPressed: { opacity: 0.8 },
     removeKeyText: { fontSize: 8, fontWeight: '900', letterSpacing: 0.65, color: theme.danger },
+    clearAllKeysButton: {
+      height: 46, marginTop: 12, borderRadius: 15, borderWidth: 1,
+      borderColor: theme.danger, backgroundColor: theme.dangerSurface,
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    },
+    clearAllKeysButtonDisabled: { opacity: 0.35 },
+    clearAllKeysText: {
+      fontSize: 9, fontWeight: '900', letterSpacing: 0.75, color: theme.danger,
+    },
     customPromptInput: {
       height: 82, paddingTop: 11, textAlignVertical: 'top', marginTop: 2, marginBottom: 8,
     },

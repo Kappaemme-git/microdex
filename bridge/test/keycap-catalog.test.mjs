@@ -126,8 +126,11 @@ test('keycaps only reference commands the bridge can run', () => {
 test('the keys on the deck carry no printed name', () => {
   // Icon only, like the physical caps. A name on a key that small was noise.
   assert.doesNotMatch(controllerSource, /caption=\{/);
-  // The command still has to be announced to screen readers.
-  assert.match(controllerSource, /\$\{action\.label\}, \$\{programmed\?\.keycapId\} keycap/);
+  // The command and its position still have to be announced to screen readers.
+  assert.match(
+    controllerSource,
+    /\$\{action\.label\}, key \$\{slotIndex \+ 1\}, active chat only/,
+  );
   assert.ok(hardwareKeySource.includes('caption?: string;'), 'caption stays available');
 });
 
@@ -139,18 +142,20 @@ test('the visible Micro controls use official vectors instead of icon-font appro
       `${keycapId} should use its official vector`,
     );
   }
-  assert.match(controllerSource, /CodexMicroGlyph keycapId=\{programmed\.keycapId\}/);
+  assert.match(
+    controllerSource,
+    /CodexCommandGlyph actionId=\{actionId\} size=\{24\} color=\{skeuo\.icon\}/,
+  );
   assert.match(controllerSource, /CodexMicroActionGlyph/);
 });
 
-test('the editor lets the user pick a printed keycap and a command', () => {
-  // Official tray artwork is selectable again, with defaults wired from the
-  // Codex Micro catalog so GIT / PR / YOLO are not blank labels.
-  assert.match(controllerSource, /styles\.keycapGrid/);
-  assert.match(controllerSource, /styles\.keycapChip/);
-  assert.match(controllerSource, /KEYCAP LABEL/);
-  assert.match(controllerSource, /KEYCAP_CATALOG\.map/);
-  assert.match(controllerSource, /defaultActionForKeycap\(keycap\.id\)/);
+test('the editor shows one scrolling command catalog and keeps keycap metadata internal', () => {
+  assert.doesNotMatch(controllerSource, /styles\.keycapGrid/);
+  assert.doesNotMatch(controllerSource, /styles\.keycapChip/);
+  assert.doesNotMatch(controllerSource, /KEYCAP LABEL/);
+  assert.doesNotMatch(controllerSource, /KEYCAP_CATALOG\.map/);
+  assert.match(controllerSource, /placeholder="Search all Codex functions"/);
+  assert.match(controllerSource, /filteredActions\.map/);
   assert.match(controllerSource, /suggestedKeycapForCommand/);
   assert.match(controllerSource, /contentContainerStyle=\{styles\.actionCatalog\}/);
 });
