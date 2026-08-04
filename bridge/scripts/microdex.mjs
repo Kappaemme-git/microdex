@@ -491,7 +491,12 @@ async function showPairingQr({ header = true } = {}) {
   printStep(1, 'Preparing secure connection', 'No shared Wi-Fi required');
   const details = await waitForRemotePairingDetails();
   if (details.remoteAccess?.ready) {
-    printCheck('Remote access', 'Ready on Wi-Fi or mobile data');
+    printCheck(
+      'Remote access',
+      details.remoteAccess.transport === 'relay'
+        ? 'Stable address · ready on Wi-Fi or mobile data'
+        : 'Ready on Wi-Fi or mobile data',
+    );
   } else {
     printWarning(
       'Remote access unavailable',
@@ -710,7 +715,12 @@ async function status() {
     if (await exists(launchAgentPath)) printCheck('Automatic startup', 'Enabled');
     else printWarning('Automatic startup', 'Not installed');
     if (health.remoteAccess?.ready) {
-      printCheck('Remote access', 'Ready on Wi-Fi or mobile data');
+      printCheck(
+        'Remote access',
+        health.remoteAccess.transport === 'relay'
+          ? 'Stable address · ready on Wi-Fi or mobile data'
+          : 'Ready on Wi-Fi or mobile data',
+      );
     } else if (health.remoteAccess?.status === 'disabled') {
       printWarning('Remote access', 'Disabled; same Wi-Fi required');
     } else if (health.remoteAccess?.status === 'cooldown') {

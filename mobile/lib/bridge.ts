@@ -98,7 +98,7 @@ export type BridgeStatus = {
   connection?: {
     remoteAccess: string;
     remoteReady: boolean;
-    transport: 'https' | 'local';
+    transport: 'relay' | 'https' | 'local';
   };
   fastMode: boolean;
   reasoningEffort: ReasoningEffort;
@@ -171,7 +171,8 @@ export function mobileAppInfo() {
 export function bridgeEventsUrl(bridgeUrl: string) {
   const url = new URL(bridgeUrl.replace(/\/$/, ''));
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  url.pathname = '/api/remote/events';
+  const basePath = url.pathname === '/' ? '' : url.pathname.replace(/\/$/, '');
+  url.pathname = `${basePath}/api/remote/events`;
   url.search = '';
   url.hash = '';
   return url.toString();
@@ -198,12 +199,17 @@ export async function bridgeRequest<T>(
       signal: controller.signal,
     });
 
-    const payload = (await response.json()) as T & { error?: string };
+    const payload = (await response.json()) as T & { error?: string; code?: string };
     if (!response.ok) {
       const message = payload.error ?? `Bridge error ${response.status}`;
       if (response.status === 401) {
         throw new BridgeAuthError(
           'This Mac no longer accepts the saved access code. Run "microdex pair" on the Mac and scan the new QR.',
+        );
+      }
+      if (response.status === 503 && payload.code === 'MAC_OFFLINE') {
+        throw new BridgeConnectionError(
+          'Your Mac is offline or sleeping. Microdex will reconnect automatically when it comes back online.',
         );
       }
       throw new Error(message);

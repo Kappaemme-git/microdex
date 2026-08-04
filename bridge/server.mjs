@@ -32,6 +32,7 @@ import {
 import { attachRemoteEvents } from './lib/remote-events.mjs';
 import { RemoteMessageQueue } from './lib/remote-message-queue.mjs';
 import { PairingSession } from './lib/pairing-session.mjs';
+import { createRemoteRelay } from './lib/remote-relay.mjs';
 import { createRemoteTunnel } from './lib/remote-tunnel.mjs';
 import {
   applyFastSetting,
@@ -62,13 +63,34 @@ const configPath = process.env.MICRODEX_CONFIG_PATH || path.join(codexHome, 'con
 const hooksDir = process.env.MICRODEX_HOOKS_DIR || path.join(bridgeDir, 'hooks');
 const backgroundMode = process.env.MICRODEX_BACKGROUND === '1';
 const remoteAccessEnabled = process.env.MICRODEX_REMOTE_ACCESS !== '0';
+const quickTunnelEnabled =
+  remoteAccessEnabled && process.env.MICRODEX_QUICK_TUNNEL !== '0';
 let pairingSession = new PairingSession({ accessToken });
-const remoteTunnel = createRemoteTunnel({
+const stableRelay = createRemoteRelay({
   port,
   stateDir: microdexHome,
+  accessToken,
   enabled: remoteAccessEnabled,
 });
-let remoteTunnelState = remoteTunnel.state();
+const quickTunnel = createRemoteTunnel({
+  port,
+  stateDir: microdexHome,
+  enabled: quickTunnelEnabled,
+});
+let stableRelayState = stableRelay.state();
+let quickTunnelState = quickTunnel.state();
+
+function effectiveRemoteAccess() {
+  if (stableRelayState.ready) return stableRelayState;
+  if (quickTunnelState.ready) return { ...quickTunnelState, transport: 'quick-tunnel' };
+  if (!remoteAccessEnabled) return stableRelayState;
+  return {
+    ...stableRelayState,
+    error: stableRelayState.error || quickTunnelState.error,
+  };
+}
+
+let remoteTunnelState = effectiveRemoteAccess();
 const codex = new CodexAppServer();
 let remoteEvents = null;
 const desktopReady = ensureDesktopCompanion().catch((error) => ({
@@ -159,7 +181,9 @@ async function publicStatus() {
     connection: {
       remoteAccess: remoteTunnelState.status,
       remoteReady: remoteTunnelState.ready,
-      transport: remoteTunnelState.ready ? 'https' : 'local',
+      transport: remoteTunnelState.ready
+        ? remoteTunnelState.transport === 'relay' ? 'relay' : 'https'
+        : 'local',
     },
     fastMode: current.fastMode,
     reasoningEffort: current.reasoningEffort,
@@ -361,7 +385,7 @@ function pairingDetails() {
     ? [remoteAddress, ...localAddresses.filter((address) => address !== remoteAddress)]
     : localAddresses;
   const urls = addresses.map((address) => {
-    const pairingUrl = new URL('/pair', `${address}/`);
+    const pairingUrl = new URL(`${address.replace(/\/$/, '')}/pair`);
     pairingUrl.searchParams.set('code', pairingSession.code);
     return pairingUrl.toString();
   });
@@ -373,6 +397,7 @@ function pairingDetails() {
       status: remoteTunnelState.status,
       ready: remoteTunnelState.ready,
       url: remoteAddress,
+      transport: remoteTunnelState.transport,
       error: remoteTunnelState.error,
     },
   };
@@ -392,6 +417,7 @@ const server = http.createServer(async (request, response) => {
         remoteAccess: {
           status: remoteTunnelState.status,
           ready: remoteTunnelState.ready,
+          transport: remoteTunnelState.transport,
         },
       });
     }
@@ -824,7 +850,8 @@ server.listen(port, host, () => {
       printStep(1, 'Preparing secure remote access', 'Works on Wi-Fi or mobile data');
     }
   }
-  remoteTunnel.start();
+  stableRelay.start();
+  quickTunnel.start();
   void desktopReady.then(async (desktop) => {
     if (desktop.available && !desktop.trusted) {
       await desktopControlStatus({ prompt: true });
@@ -859,20 +886,34 @@ function printForegroundPairing(remoteReady) {
   console.log(`  ${ui.dim('Press Control-C to stop Microdex.')}\n`);
 }
 
-const unsubscribeRemoteTunnel = remoteTunnel.subscribe((state) => {
-  remoteTunnelState = state;
-  if (state.ready) {
+function publishRemoteAccess() {
+  const previousUrl = remoteTunnelState.url;
+  remoteTunnelState = effectiveRemoteAccess();
+  if (remoteTunnelState.ready) {
     if (foregroundFallbackTimer) clearTimeout(foregroundFallbackTimer);
     foregroundFallbackTimer = null;
-    if (backgroundMode) console.log(`Microdex remote access ready at ${state.url}`);
-    else printForegroundPairing(true);
+    if (backgroundMode && previousUrl !== remoteTunnelState.url) {
+      const label = remoteTunnelState.transport === 'relay' ? 'stable relay' : 'beta tunnel';
+      console.log(`Microdex ${label} ready at ${remoteTunnelState.url}`);
+    } else if (!backgroundMode) {
+      printForegroundPairing(true);
+    }
   } else if (
     backgroundMode &&
-    ['offline', 'cooldown'].includes(state.status) &&
-    state.error
+    ['offline', 'cooldown', 'error'].includes(remoteTunnelState.status) &&
+    remoteTunnelState.error
   ) {
-    console.error(`Microdex remote access: ${state.error}`);
+    console.error(`Microdex remote access: ${remoteTunnelState.error}`);
   }
+}
+
+const unsubscribeStableRelay = stableRelay.subscribe((state) => {
+  stableRelayState = state;
+  publishRemoteAccess();
+});
+const unsubscribeQuickTunnel = quickTunnel.subscribe((state) => {
+  quickTunnelState = state;
+  publishRemoteAccess();
 });
 
 if (!remoteAccessEnabled) {
@@ -886,8 +927,10 @@ function shutdown() {
   console.log(`  ${ui.dim('Stopping Microdex…')}`);
   closeDesktopQueueMenu();
   if (foregroundFallbackTimer) clearTimeout(foregroundFallbackTimer);
-  unsubscribeRemoteTunnel();
-  remoteTunnel.close();
+  unsubscribeStableRelay();
+  unsubscribeQuickTunnel();
+  stableRelay.close();
+  quickTunnel.close();
   remoteEvents.close();
   unsubscribeMessageQueue();
   messageQueue.close();

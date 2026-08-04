@@ -25,10 +25,14 @@ export function normalizeBridgeUrl(value: string) {
   if (parsed.protocol === 'http:' && !isPrivateIpv4 && !isLoopback && !isLocalName) {
     throw new Error('Remote Microdex pairing requires a secure HTTPS address.');
   }
-  if (parsed.pathname !== '/' || parsed.search || parsed.hash) {
+  const pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+  const isStableRelayPath =
+    parsed.protocol === 'https:' &&
+    /^\/v1\/devices\/[A-Za-z0-9_-]{20,64}$/.test(pathname);
+  if ((pathname !== '/' && !isStableRelayPath) || parsed.search || parsed.hash) {
     throw new Error('The pairing code contains an invalid bridge address.');
   }
-  return parsed.origin;
+  return pathname === '/' ? parsed.origin : `${parsed.origin}${pathname}`;
 }
 
 /**
@@ -50,7 +54,7 @@ export function buildPairingUrl({ bridgeUrl, token }: PairingCredentials) {
  */
 export function buildPairingHttpUrl({ bridgeUrl, token }: PairingCredentials) {
   const base = normalizeBridgeUrl(bridgeUrl);
-  const url = new URL('/pair', `${base}/`);
+  const url = new URL(`${base.replace(/\/$/, '')}/pair`);
   url.searchParams.set('token', token.trim());
   return url.toString();
 }
@@ -72,7 +76,10 @@ export function parsePairingUrl(value: string): PairingPayload {
   // Preferred QR payload: http(s)://BRIDGE/pair?code=ONE_TIME_CODE
   if (['http:', 'https:'].includes(parsed.protocol)) {
     const path = parsed.pathname.replace(/\/+$/, '') || '/';
-    if (path !== '/pair') {
+    const relayPair = path.match(
+      /^(\/v1\/devices\/[A-Za-z0-9_-]{20,64})\/pair$/,
+    );
+    if (path !== '/pair' && !relayPair) {
       throw new Error('This is not a Microdex pairing QR code.');
     }
     const code = parsed.searchParams.get('code')?.trim() ?? '';
@@ -81,7 +88,9 @@ export function parsePairingUrl(value: string): PairingPayload {
       throw new Error('The pairing QR code is incomplete.');
     }
     return {
-      bridgeUrl: normalizeBridgeUrl(parsed.origin),
+      bridgeUrl: normalizeBridgeUrl(
+        relayPair ? `${parsed.origin}${relayPair[1]}` : parsed.origin,
+      ),
       ...(code ? { code } : { token }),
     };
   }

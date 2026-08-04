@@ -22,8 +22,8 @@ Micro control layout: six RGB Task Keys, six Command Keys, an analog joystick,
 and a reasoning dial.
 
 It runs on iOS through Expo and connects to a desktop bridge backed by Codex
-App Server. The pairing QR prefers an encrypted remote tunnel, so the phone can
-use Wi-Fi or mobile data without sharing the Mac's network.
+App Server. The pairing QR uses a stable encrypted Cloudflare relay, so the
+phone can use Wi-Fi or mobile data without sharing the Mac's network.
 
 > Independent community project. Not affiliated with OpenAI or Work Louder.
 
@@ -61,12 +61,15 @@ microdex setup
 ```
 
 The CLI installs a private runtime under `~/.microdex`, registers a macOS
-LaunchAgent, starts the local Codex connection and a secure outbound tunnel,
-then displays the pairing QR. No router port or public IP is required.
+LaunchAgent, starts the local Codex connection and a secure outbound relay,
+then displays the pairing QR. No router port or public IP is required. The Mac
+keeps the same relay address across bridge restarts.
 
 3. Open Microdex on your iPhone, tap **Pair Mac**, then scan the QR inside the
 app. After pairing, the Terminal can be closed: the bridge starts
-automatically when you log into the Mac.
+automatically when you log into the Mac. The saved pairing reconnects whenever
+the Mac is awake and online, even if the phone switches between Wi-Fi and
+mobile data.
 
 You can check a Mac before pairing with `microdex doctor`, or see whether the
 bridge is already active with `microdex status`. Use `microdex pair` for a fresh
@@ -154,8 +157,8 @@ node bridge/scripts/set-fast.mjs on --config /tmp/microdex-test-config.toml
 - Every bridge action requires an authenticated credential stored with mode `0600` in `~/.microdex/access-token`.
 - The QR contains a separate one-time pairing code, expires after 10 minutes, and cannot be reused after a successful claim.
 - The persistent bridge credential is returned only after the one-time pairing exchange and is stored in the iOS Keychain by the app.
-- Remote access uses an outbound-only Cloudflare Quick Tunnel and never opens a router port.
-- The bundled `cloudflared` archive is pinned and verified with SHA-256 before execution.
+- Remote access uses an outbound-only Cloudflare Worker relay and never opens a router port.
+- A Cloudflare Quick Tunnel remains available only as a temporary fallback; its bundled `cloudflared` archive is pinned and verified with SHA-256 before execution.
 - Public HTTP bridge addresses are rejected; remote pairing must use HTTPS.
 - The phone cannot submit arbitrary commands.
 - Local hooks use predefined names inside `bridge/hooks/`.
@@ -167,17 +170,18 @@ MICRODEX_TOKEN=a-long-secret npm run bridge
 MICRODEX_PORT=3210 npm run bridge
 MICRODEX_CONFIG_PATH=/path/to/config.toml npm run bridge
 MICRODEX_REMOTE_ACCESS=0 npm run bridge
+MICRODEX_RELAY_URL=https://your-relay.example.com npm run bridge
+MICRODEX_QUICK_TUNNEL=0 npm run bridge
 MICRODEX_CLOUDFLARED_BIN=/path/to/cloudflared npm run bridge
 ```
 
-Remote access is currently a beta powered by Cloudflare Quick Tunnels. Quick
-Tunnel hostnames are temporary and have no uptime guarantee. If the tunnel or
-Mac bridge restarts and receives a new hostname, run `microdex pair` and scan
-the new QR. If Cloudflare temporarily rate limits tunnel creation, Microdex
-keeps the local QR available and retries the remote connection after a cooldown.
-Cloudflare's service transports the encrypted tunnel traffic; a stable
-production relay or named tunnel will replace this beta path before general
-availability.
+Microdex creates a random relay identity on the Mac and stores it with mode
+`0600` in `~/.microdex/relay-device.json`. Restarting the bridge reuses that
+identity and the same public HTTPS address, so a paired phone does not need a
+new QR. If the Mac is offline or asleep, the app waits and reconnects
+automatically when the bridge returns. Cloudflare transports the encrypted TLS
+traffic; the app credential is still validated by the user's own Mac and is
+never stored as phone credentials by the relay.
 
 ---
 

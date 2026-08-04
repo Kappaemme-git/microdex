@@ -17,6 +17,10 @@ const bridgeSource = await readFile(
   new URL('../../bridge/server.mjs', import.meta.url),
   'utf8',
 );
+const bridgeClientSource = await readFile(
+  new URL('../lib/bridge.ts', import.meta.url),
+  'utf8',
+);
 const layoutSource = await readFile(
   new URL('../app/_layout.tsx', import.meta.url),
   'utf8',
@@ -36,6 +40,16 @@ test('pairing URLs round-trip without changing credentials', () => {
 });
 
 test('one-time pairing QR codes are parsed without exposing a persistent token', () => {
+  assert.deepEqual(
+    parsePairingUrl(
+      'https://microdex-relay.microdex-cli.workers.dev/v1/devices/abcdefghijklmnopqrstuv/pair?code=STABLE-CODE',
+    ),
+    {
+      bridgeUrl:
+        'https://microdex-relay.microdex-cli.workers.dev/v1/devices/abcdefghijklmnopqrstuv',
+      code: 'STABLE-CODE',
+    },
+  );
   assert.deepEqual(
     parsePairingUrl('https://fresh-microdex.trycloudflare.com/pair?code=REMOTE-CODE'),
     {
@@ -67,10 +81,17 @@ test('bridge addresses are normalized and unsafe URL shapes are rejected', () =>
     normalizeBridgeUrl('https://fresh-microdex.trycloudflare.com/'),
     'https://fresh-microdex.trycloudflare.com',
   );
+  assert.equal(
+    normalizeBridgeUrl(
+      'https://microdex-relay.microdex-cli.workers.dev/v1/devices/abcdefghijklmnopqrstuv/',
+    ),
+    'https://microdex-relay.microdex-cli.workers.dev/v1/devices/abcdefghijklmnopqrstuv',
+  );
   assert.throws(() => normalizeBridgeUrl('ftp://192.168.1.17/file'));
   assert.throws(() => normalizeBridgeUrl('http://user:pass@192.168.1.17:3210'));
   assert.throws(() => normalizeBridgeUrl('http://public-bridge.example.com'));
   assert.throws(() => normalizeBridgeUrl('https://public-bridge.example.com/unexpected'));
+  assert.throws(() => normalizeBridgeUrl('https://relay.example/v1/devices/short'));
 });
 
 test('foreign and incomplete QR codes are rejected', () => {
@@ -90,6 +111,8 @@ test('the phone supports QR pairing and automatic network reconnection', () => {
   assert.match(controllerSource, /Network\.useNetworkState\(\)/);
   assert.match(controllerSource, /AppState\.addEventListener/);
   assert.match(controllerSource, /reconnectAttempt/);
+  assert.match(bridgeClientSource, /\$\{basePath\}\/api\/remote\/events/);
+  assert.match(bridgeClientSource, /payload\.code === 'MAC_OFFLINE'/);
 });
 
 test('the controller is gated until a Mac is paired and online', () => {
@@ -115,6 +138,7 @@ test('the desktop bridge displays a Microdex pairing QR', () => {
   assert.match(bridgeSource, /pathname === '\/pair'/);
   assert.match(bridgeSource, /printQr\(pairingUrl, qrcode\)/);
   assert.match(bridgeSource, /pairingUrl\.searchParams\.set\('code', pairingSession\.code\)/);
+  assert.match(bridgeSource, /transport: remoteTunnelState\.transport/);
   assert.doesNotMatch(bridgeSource, /pairingHttpUrl\.searchParams\.set\('token'/);
 });
 

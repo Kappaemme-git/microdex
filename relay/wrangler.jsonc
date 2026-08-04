@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "microdex-relay",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-04",
+  "workers_dev": true,
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "DEVICE_ROOMS",
+        "class_name": "DeviceRoom"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["DeviceRoom"]
+    }
+  ]
+}
