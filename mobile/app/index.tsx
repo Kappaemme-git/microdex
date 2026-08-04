@@ -33,6 +33,8 @@ import { runOnJS } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import ChatDrawer, { type ChatDrawerHandle } from '@/components/chat-drawer';
+import { CentralIcon, type CentralIconName } from '@/components/central-icon';
+import { CodexCommandGlyph } from '@/components/codex-command-glyph';
 import {
   CodexMicroActionGlyph,
   CodexMicroGlyph,
@@ -57,7 +59,7 @@ import {
   mobileAppInfo,
 } from '@/lib/bridge';
 import { Fonts } from '@/lib/fonts';
-import { KEYCAP_CATALOG, suggestedKeycapForCommand } from '@/lib/keycap-catalog';
+import { suggestedKeycapForCommand } from '@/lib/keycap-catalog';
 import {
   DEFAULT_MICRO_LAYOUT,
   MICRO_ACTIONS,
@@ -79,10 +81,10 @@ import { claimPairingPayload, parsePairingUrl } from '@/lib/pairing';
 import type { AgentStatusKey } from '@/lib/theme';
 import { LED, LED_RECORDING, statusTone, ThemePalette, useTheme } from '@/lib/theme';
 
-const STATUS_ICON: Partial<Record<AgentStatusKey, MicroActionIcon>> = {
-  complete: 'check-circle',
-  waiting: 'alert-circle-outline',
-  error: 'alert-octagon-outline',
+const STATUS_ICON: Partial<Record<AgentStatusKey, CentralIconName>> = {
+  complete: 'successCircle',
+  waiting: 'alert',
+  error: 'alert',
 };
 
 type JoystickDirection = 'up' | 'right' | 'down' | 'left';
@@ -312,13 +314,6 @@ export default function ControllerScreen() {
   const [editingSlot, setEditingSlot] = useState<number | null>(null);
   const [actionSearch, setActionSearch] = useState('');
   const [chosenActionId, setChosenActionId] = useState<string | null>(null);
-  /**
-   * The cap saved with the key. It is derived from the chosen command rather
-   * than picked by hand: the editor no longer shows a cap grid, since the cap
-   * is decoration and choosing it separately only produced keys whose label
-   * contradicted their command.
-   */
-  const [chosenKeycapId, setChosenKeycapId] = useState<MicroKeycapId>('EMPT1');
   const [customPrompt, setCustomPrompt] = useState('');
   const [encoderMode, setEncoderMode] = useState<EncoderMode>('reasoning');
   const [guideVisible, setGuideVisible] = useState(false);
@@ -1550,7 +1545,6 @@ export default function ControllerScreen() {
           ? 'microdex.insertPrompt'
           : null),
     );
-    setChosenKeycapId(keycapId);
     setCustomPrompt(
       current?.action?.type === 'prompt'
         ? current.action.text
@@ -1568,10 +1562,21 @@ export default function ControllerScreen() {
       announce('Write the custom prompt for this key.', true);
       return;
     }
+    // Keep keycapId in storage and in the bridge payload for compatibility
+    // with existing installations. It is implementation metadata now: the UI
+    // always renders the selected command's semantic icon.
+    const currentKeycapId =
+      programmedKeys[editingSlot]?.keycapId ??
+      DEFAULT_MICRO_LAYOUT[editingSlot] ??
+      (`EMPT${Math.min(editingSlot + 1, 5)}` as MicroKeycapId);
+    const commandId = chosenAction.custom
+      ? null
+      : (chosenAction.id as ProgrammableCommandId);
+    const keycapId = suggestedKeycapForCommand(commandId) ?? currentKeycapId;
     const nextKeys = programmedKeys.map((key, index) =>
       index === editingSlot
         ? {
-            keycapId: chosenKeycapId,
+            keycapId,
             action: chosenAction.custom
               ? {
                   type: 'prompt' as const,
@@ -1587,14 +1592,11 @@ export default function ControllerScreen() {
     setProgrammedKeys(nextKeys);
     await writeStoredValue(STORAGE_PROGRAMMED_KEYS, JSON.stringify(nextKeys));
     setEditingSlot(null);
-    announce(
-      `${chosenKeycapId} now runs ${chosenAction.label} on the active chat.`,
-    );
+    announce(`${chosenAction.label} assigned to key ${editingSlot + 1}.`);
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [
     announce,
     chosenAction,
-    chosenKeycapId,
     customPrompt,
     editingSlot,
     programmedKeys,
@@ -1886,19 +1888,19 @@ export default function ControllerScreen() {
       <HardwareKey
         accessibilityLabel={
           action
-            ? `${action.label}, ${programmed?.keycapId} keycap, active chat only`
+            ? `${action.label}, key ${slotIndex + 1}, active chat only`
             : programmed
-              ? `${programmed.keycapId}, choose a command`
+              ? `Key ${slotIndex + 1}, choose a command`
               : `Program empty key ${slotIndex + 1}`
         }
         variant="rgb"
         // Icon only, like the physical caps. The command name lives in the
         // accessibility label and in the editor, not printed on the key.
         symbol={
-          programmed ? (
-            <CodexMicroGlyph keycapId={programmed.keycapId} color={skeuo.icon} />
+          actionId ? (
+            <CodexCommandGlyph actionId={actionId} size={24} color={skeuo.icon} />
           ) : (
-            <MaterialCommunityIcons name="plus" size={22} color={skeuo.icon} />
+            <CentralIcon name="plus" size={22} color={skeuo.icon} />
           )
         }
         phase={slotIndex / 6}
@@ -1934,8 +1936,8 @@ export default function ControllerScreen() {
         commandCopied && styles.gateCopyButtonDone,
         pressed && styles.gateButtonPressed,
       ]}>
-      <MaterialCommunityIcons
-        name={commandCopied ? 'check' : 'content-copy'}
+      <CentralIcon
+        name={commandCopied ? 'check' : 'copy'}
         size={15}
         color={commandCopied ? theme.online : theme.textMuted}
       />
@@ -2009,7 +2011,7 @@ export default function ControllerScreen() {
                     {bridgeConnecting ? (
                       <ActivityIndicator size="small" color={theme.bg} />
                     ) : (
-                      <MaterialCommunityIcons name="refresh" size={17} color={theme.bg} />
+                      <CentralIcon name="refresh" size={17} color={theme.bg} />
                     )}
                     <Text style={styles.gatePrimaryButtonText}>Retry connection</Text>
                   </Pressable>
@@ -2020,7 +2022,7 @@ export default function ControllerScreen() {
                       styles.gateSecondaryButton,
                       pressed && styles.gateButtonPressed,
                     ]}>
-                    <MaterialCommunityIcons name="qrcode-scan" size={17} color={theme.text} />
+                    <CentralIcon name="qrCode" size={17} color={theme.text} />
                     <Text style={styles.gateSecondaryButtonText}>Pair another Mac</Text>
                   </Pressable>
                   <Pressable
@@ -2099,7 +2101,7 @@ export default function ControllerScreen() {
                       styles.gatePrimaryButton,
                       pressed && styles.gateButtonPressed,
                     ]}>
-                    <MaterialCommunityIcons name="qrcode-scan" size={17} color={theme.bg} />
+                    <CentralIcon name="qrCode" size={17} color={theme.bg} />
                     <Text style={styles.gatePrimaryButtonText}>Scan pairing code</Text>
                   </Pressable>
 
@@ -2142,8 +2144,8 @@ export default function ControllerScreen() {
                   styles.threadSwitcherMain,
                   pressed && styles.threadSwitcherPressed,
                 ]}>
-                <MaterialCommunityIcons
-                  name="message-text-outline"
+                <CentralIcon
+                  name="chat"
                   size={14}
                   color={theme.textMuted}
                 />
@@ -2163,7 +2165,7 @@ export default function ControllerScreen() {
                 {loadingAction === 'select' ? (
                   <ActivityIndicator size="small" color={theme.textMuted} />
                 ) : (
-                  <MaterialCommunityIcons name="chevron-right" size={17} color={theme.textMuted} />
+                  <CentralIcon name="chevronRight" size={17} color={theme.textMuted} />
                 )}
               </Pressable>
             </View>
@@ -2175,8 +2177,8 @@ export default function ControllerScreen() {
                 void Haptics.selectionAsync();
               }}
               style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}>
-              <MaterialCommunityIcons
-                name={mode === 'dark' ? 'weather-sunny' : 'weather-night'}
+              <CentralIcon
+                name={mode === 'dark' ? 'sun' : 'moon'}
                 size={17}
                 color={theme.text}
               />
@@ -2186,7 +2188,7 @@ export default function ControllerScreen() {
               accessibilityLabel="Open Microdex settings"
               onPress={() => setSettingsVisible(true)}
               style={({ pressed }) => [styles.statusButton, pressed && styles.iconButtonPressed]}>
-              <MaterialCommunityIcons name="cog-outline" size={18} color={theme.text} />
+              <CentralIcon name="settings" size={18} color={theme.text} />
               <View
                 style={[
                   styles.headerStatusDot,
@@ -2412,7 +2414,7 @@ export default function ControllerScreen() {
                   accessibilityLabel="Connect your Mac to Codex Micro"
                   onPress={() => setSettingsVisible(true)}
                   style={({ pressed }) => [styles.buildLink, pressed && styles.buildLinkPressed]}>
-                  <MaterialCommunityIcons name="link-variant" size={12} color={skeuo.accent} />
+                  <CentralIcon name="link" size={12} color={skeuo.accent} />
                   <Text style={styles.buildLinkText}>CONNECT YOUR MAC</Text>
                 </Pressable>
               )}
@@ -2426,7 +2428,7 @@ export default function ControllerScreen() {
           <View style={styles.composerHeader}>
             <View style={styles.composerIdentity}>
               <View style={styles.composerChatIcon}>
-                <MaterialCommunityIcons name="message-text-outline" size={16} color={theme.online} />
+                <CentralIcon name="chat" size={16} color={theme.online} />
               </View>
               <View style={styles.composerIdentityText}>
                 <Text style={styles.composerKicker}>Chat to Codex</Text>
@@ -2437,7 +2439,7 @@ export default function ControllerScreen() {
               {loadingAction ? (
                 <ActivityIndicator size="small" color={theme.textMuted} />
               ) : statusIcon ? (
-                <MaterialCommunityIcons
+                <CentralIcon
                   name={statusIcon}
                   size={13}
                   color={activeMeta.textColor}
@@ -2457,8 +2459,8 @@ export default function ControllerScreen() {
           </View>
 
           <View style={styles.composerBox}>
-            <MaterialCommunityIcons
-              name="chat-outline"
+            <CentralIcon
+              name="chat"
               size={18}
               color={theme.textFaint}
               style={styles.composerLeadingIcon}
@@ -2488,7 +2490,7 @@ export default function ControllerScreen() {
               {loadingAction === 'send' ? (
                 <ActivityIndicator size="small" color={theme.accentText} />
               ) : (
-                <MaterialCommunityIcons name="arrow-up" size={20} color={theme.accentText} />
+                <CentralIcon name="arrowUp" size={20} color={theme.accentText} />
               )}
             </Pressable>
           </View>
@@ -2526,7 +2528,7 @@ export default function ControllerScreen() {
                       {removing ? (
                         <ActivityIndicator size="small" color={theme.danger} />
                       ) : (
-                        <MaterialCommunityIcons name="close" size={15} color={theme.textFaint} />
+                        <CentralIcon name="close" size={15} color={theme.textFaint} />
                       )}
                     </Pressable>
                   </View>
@@ -2540,14 +2542,14 @@ export default function ControllerScreen() {
               {activeThread?.fastMode ? 'Fast' : 'Standard'} · {supportedReasoningEfforts[dialIndex]}
             </Text>
             <View style={styles.composerRoute}>
-              <MaterialCommunityIcons name="monitor-arrow-down-variant" size={12} color={theme.textFaint} />
+              <CentralIcon name="output" size={12} color={theme.textFaint} />
               <Text style={styles.composerMeta}>OUTPUT ON MAC</Text>
             </View>
           </View>
 
           {noticeError ? (
             <View style={[styles.notice, styles.noticeError, styles.composerNotice]}>
-              <MaterialCommunityIcons name="alert-circle-outline" size={16} color={theme.dangerText} />
+              <CentralIcon name="alert" size={16} color={theme.dangerText} />
               <Text style={[styles.noticeText, styles.noticeTextError]}>{notice}</Text>
             </View>
           ) : null}
@@ -2607,7 +2609,7 @@ export default function ControllerScreen() {
                     accessibilityLabel="Close key manager"
                     onPress={() => setKeyManagerVisible(false)}
                     style={styles.closeButton}>
-                    <MaterialCommunityIcons name="close" size={20} color={theme.text} />
+                    <CentralIcon name="close" size={20} color={theme.text} />
                   </Pressable>
                 </View>
               </>
@@ -2618,7 +2620,8 @@ export default function ControllerScreen() {
             </Text>
             <View style={styles.keyManagerGrid}>
               {programmedKeys.map((programmed, slotIndex) => {
-                const action = findMicroAction(programmedActionId(programmed));
+                const actionId = programmedActionId(programmed);
+                const action = findMicroAction(actionId);
                 return (
                   <View key={slotIndex} style={styles.keyManagerCard}>
                     <Pressable
@@ -2637,22 +2640,17 @@ export default function ControllerScreen() {
                         pressed && styles.actionCardPressed,
                       ]}>
                       <View style={[styles.keyManagerIcon, !action && styles.keyManagerIconEmpty]}>
-                        {programmed ? (
-                          <CodexMicroGlyph
-                            keycapId={programmed.keycapId}
+                        {actionId ? (
+                          <CodexCommandGlyph
+                            actionId={actionId}
                             size={24}
                             color={action ? theme.text : theme.blue}
                           />
                         ) : (
-                          <MaterialCommunityIcons name="plus" size={24} color={theme.blue} />
+                          <CentralIcon name="plus" size={24} color={theme.blue} />
                         )}
                       </View>
                       <Text style={styles.keyManagerSlot}>KEY {slotIndex + 1}</Text>
-                      {programmed ? (
-                        <Text style={styles.keyManagerKeycap}>
-                          {programmed.keycapId}
-                        </Text>
-                      ) : null}
                       <Text adjustsFontSizeToFit minimumFontScale={0.72} numberOfLines={1} style={styles.keyManagerLabel}>
                         {action?.label ?? (programmed ? 'Choose command' : 'Choose action')}
                       </Text>
@@ -2667,7 +2665,7 @@ export default function ControllerScreen() {
                         !programmed && styles.removeKeyButtonDisabled,
                         pressed && styles.removeKeyButtonPressed,
                       ]}>
-                      <MaterialCommunityIcons name="trash-can-outline" size={16} color={theme.danger} />
+                      <CentralIcon name="trash" size={16} color={theme.danger} />
                       <Text style={styles.removeKeyText}>REMOVE</Text>
                     </Pressable>
                   </View>
@@ -2711,59 +2709,23 @@ export default function ControllerScreen() {
                     accessibilityLabel="Close key catalog"
                     onPress={() => setEditingSlot(null)}
                     style={styles.closeButton}>
-                    <MaterialCommunityIcons name="close" size={20} color={theme.text} />
+                    <CentralIcon name="close" size={20} color={theme.text} />
                   </Pressable>
                 </View>
               </>
             }>
             <Text style={styles.sheetBody}>
-              Pick the printed keycap from your tray, then assign its Codex
-              command. Defaults match the official Micro mapping.
+              Choose any Codex function. Its icon stays the same here, in the
+              key manager, and on your Microdex key.
             </Text>
-            <Text style={styles.keycapSectionLabel}>KEYCAP LABEL</Text>
-            <View style={styles.keycapGrid}>
-              {KEYCAP_CATALOG.map((keycap) => {
-                const selected = chosenKeycapId === keycap.id;
-                return (
-                  <Pressable
-                    key={keycap.id}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${keycap.name} keycap`}
-                    accessibilityState={{ selected }}
-                    onPress={() => {
-                      setChosenKeycapId(keycap.id);
-                      const defaults = defaultActionForKeycap(keycap.id);
-                      if (defaults?.type === 'command') {
-                        setChosenActionId(defaults.commandId);
-                        setCustomPrompt('');
-                      } else if (defaults?.type === 'prompt') {
-                        setChosenActionId('microdex.insertPrompt');
-                        setCustomPrompt(defaults.text);
-                      }
-                      void Haptics.selectionAsync();
-                    }}
-                    style={({ pressed }) => [
-                      styles.keycapChip,
-                      selected && styles.keycapChipSelected,
-                      pressed && styles.actionRowPressed,
-                    ]}>
-                    <CodexMicroGlyph
-                      keycapId={keycap.id}
-                      size={18}
-                      color={selected ? theme.text : theme.textMuted}
-                    />
-                  </Pressable>
-                );
-              })}
-            </View>
             <View style={styles.searchWrap}>
-              <MaterialCommunityIcons name="magnify" size={18} color={theme.textFaint} />
+              <CentralIcon name="search" size={18} color={theme.textFaint} />
               <TextInput
                 autoCapitalize="none"
                 autoCorrect={false}
                 value={actionSearch}
                 onChangeText={setActionSearch}
-                placeholder="Search verified Codex commands"
+                placeholder="Search all Codex functions"
                 placeholderTextColor={theme.textFaint}
                 style={styles.searchInput}
               />
@@ -2782,12 +2744,6 @@ export default function ControllerScreen() {
                     onPress={() => {
                       setChosenActionId(action.id);
                       if (!action.custom) setCustomPrompt('');
-                      const suggested = suggestedKeycapForCommand(
-                        action.id === 'microdex.insertPrompt'
-                          ? null
-                          : (action.id as ProgrammableCommandId),
-                      );
-                      if (suggested) setChosenKeycapId(suggested);
                       void Haptics.selectionAsync();
                     }}
                     style={({ pressed }) => [
@@ -2795,7 +2751,7 @@ export default function ControllerScreen() {
                       pressed && styles.actionRowPressed,
                     ]}>
                     <View style={styles.actionRowIcon}>
-                      <CodexMicroActionGlyph
+                      <CodexCommandGlyph
                         actionId={action.id}
                         size={21}
                         color={selected ? theme.text : theme.textMuted}
@@ -2816,7 +2772,7 @@ export default function ControllerScreen() {
                     </View>
                     <View style={styles.actionCheck}>
                       {selected ? (
-                        <MaterialCommunityIcons name="check" size={18} color={theme.text} />
+                        <CentralIcon name="check" size={18} color={theme.text} />
                       ) : null}
                     </View>
                   </Pressable>
@@ -2839,7 +2795,7 @@ export default function ControllerScreen() {
                 accessibilityRole="button"
                 onPress={() => void clearProgrammedKey()}
                 style={({ pressed }) => [styles.clearButton, pressed && styles.guideButtonPressed]}>
-                <MaterialCommunityIcons name="delete-outline" size={18} color={theme.textMuted} />
+                <CentralIcon name="trash" size={18} color={theme.textMuted} />
                 <Text style={styles.clearButtonText}>CLEAR</Text>
               </Pressable>
               <Pressable
@@ -2852,7 +2808,7 @@ export default function ControllerScreen() {
                   pressed && styles.connectButtonPressed,
                 ]}>
                 <Text style={styles.connectButtonText}>SAVE KEY</Text>
-                <MaterialCommunityIcons name="check" size={20} color={theme.accentText} />
+                <CentralIcon name="check" size={20} color={theme.accentText} />
               </Pressable>
             </View>
           </DismissibleSheet>
@@ -2888,7 +2844,7 @@ export default function ControllerScreen() {
                     accessibilityLabel="Close key guide"
                     onPress={() => setGuideVisible(false)}
                     style={styles.closeButton}>
-                    <MaterialCommunityIcons name="close" size={20} color={theme.text} />
+                    <CentralIcon name="close" size={20} color={theme.text} />
                   </Pressable>
                 </View>
               </>
@@ -3011,7 +2967,7 @@ export default function ControllerScreen() {
                     accessibilityLabel="Close settings"
                     onPress={() => setSettingsVisible(false)}
                     style={styles.closeButton}>
-                    <MaterialCommunityIcons name="close" size={18} color={theme.text} />
+                    <CentralIcon name="close" size={18} color={theme.text} />
                   </Pressable>
                 </View>
               </>
@@ -3037,8 +2993,8 @@ export default function ControllerScreen() {
                       commandCopied && styles.settingsCopyChipDone,
                       pressed && styles.gateButtonPressed,
                     ]}>
-                    <MaterialCommunityIcons
-                      name={commandCopied ? 'check' : 'content-copy'}
+                    <CentralIcon
+                      name={commandCopied ? 'check' : 'copy'}
                       size={14}
                       color={commandCopied ? theme.online : theme.textMuted}
                     />
@@ -3052,12 +3008,12 @@ export default function ControllerScreen() {
                     styles.settingsPrimaryButton,
                     pressed && styles.gateButtonPressed,
                   ]}>
-                  <MaterialCommunityIcons name="qrcode-scan" size={16} color={theme.bg} />
+                  <CentralIcon name="qrCode" size={16} color={theme.bg} />
                   <Text style={styles.settingsPrimaryButtonText}>Scan pairing code</Text>
                 </Pressable>
                 {noticeError ? (
                   <View style={[styles.notice, styles.noticeError]}>
-                    <MaterialCommunityIcons name="alert-circle-outline" size={16} color={theme.dangerText} />
+                    <CentralIcon name="alert" size={16} color={theme.dangerText} />
                     <Text style={[styles.noticeText, styles.noticeTextError]}>{notice}</Text>
                   </View>
                 ) : null}
@@ -3078,8 +3034,8 @@ export default function ControllerScreen() {
                           void Haptics.selectionAsync();
                         }}
                         style={[styles.themeSegmentOption, active && styles.themeSegmentOptionActive]}>
-                        <MaterialCommunityIcons
-                          name={option === 'dark' ? 'weather-night' : 'weather-sunny'}
+                        <CentralIcon
+                          name={option === 'dark' ? 'moon' : 'sun'}
                           size={15}
                           color={active ? theme.text : theme.textMuted}
                         />
@@ -3131,7 +3087,7 @@ export default function ControllerScreen() {
                   }}
                   style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
                   <Text style={styles.settingsLinkTitle}>Customize keys</Text>
-                  <MaterialCommunityIcons name="chevron-right" size={18} color={theme.textFaint} />
+                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
@@ -3141,7 +3097,7 @@ export default function ControllerScreen() {
                   }}
                   style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
                   <Text style={styles.settingsLinkTitle}>Controls guide</Text>
-                  <MaterialCommunityIcons name="chevron-right" size={18} color={theme.textFaint} />
+                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
@@ -3149,7 +3105,7 @@ export default function ControllerScreen() {
                   onPress={() => void copyDiagnostics()}
                   style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
                   <Text style={styles.settingsLinkTitle}>Copy diagnostics</Text>
-                  <MaterialCommunityIcons name="content-copy" size={16} color={theme.textFaint} />
+                  <CentralIcon name="copy" size={16} color={theme.textFaint} />
                 </Pressable>
               </View>
 
@@ -3186,7 +3142,7 @@ export default function ControllerScreen() {
               accessibilityLabel="Close QR scanner"
               onPress={() => setScannerVisible(false)}
               style={styles.scannerClose}>
-              <MaterialCommunityIcons name="close" size={23} color="#FFFFFF" />
+              <CentralIcon name="close" size={23} color="#FFFFFF" />
             </Pressable>
             <Text style={styles.scannerTitle}>Scan your computer</Text>
             <View style={styles.scannerHeaderSpacer} />
@@ -3869,33 +3825,6 @@ function createStyles(theme: ThemePalette) {
       alignItems: 'center', gap: 8,
     },
     searchInput: { flex: 1, height: '100%', color: theme.text, fontSize: 13, fontWeight: '600' },
-    keycapSectionLabel: {
-      marginBottom: 8,
-      fontSize: 8,
-      fontWeight: '900',
-      letterSpacing: 0.7,
-      color: theme.textFaint,
-    },
-    keycapGrid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 7,
-      marginBottom: 14,
-    },
-    keycapChip: {
-      width: 40,
-      height: 40,
-      borderRadius: 11,
-      borderWidth: 1,
-      borderColor: theme.border,
-      backgroundColor: theme.surfaceInput,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    keycapChipSelected: {
-      borderColor: theme.text,
-      backgroundColor: theme.surface,
-    },
     actionCatalog: { paddingBottom: 10 },
     actionRow: {
       minHeight: 58, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 14,
@@ -3932,9 +3861,6 @@ function createStyles(theme: ThemePalette) {
     keyManagerIconEmpty: { backgroundColor: theme.accentSoft, borderWidth: 1, borderColor: theme.accentSoftBorder },
     keyManagerSlot: {
       marginTop: 9, fontSize: 7, fontWeight: '900', letterSpacing: 0.85, color: theme.textFaint,
-    },
-    keyManagerKeycap: {
-      marginTop: 3, fontSize: 9, fontWeight: '900', letterSpacing: 0.55, color: theme.textMuted,
     },
     keyManagerLabel: {
       width: '100%', marginTop: 3, textAlign: 'center', fontSize: 12,

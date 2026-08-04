@@ -94,7 +94,7 @@ test('the controller is gated until a Mac is paired and online', () => {
   assert.match(controllerSource, /deleteStoredValue\(STORAGE_TOKEN\)/);
   assert.match(controllerSource, /npx microdex-cli@latest setup/);
   assert.match(controllerSource, /setCommandCopied\(true\)/);
-  assert.match(controllerSource, /commandCopied \? 'check' : 'content-copy'/);
+  assert.match(controllerSource, /commandCopied \? 'check' : 'copy'/);
   assert.doesNotMatch(controllerSource, /npx microdex-cli@latest up/);
 });
 
