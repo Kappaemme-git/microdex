@@ -11,6 +11,9 @@ test('a pairing code can be exchanged for the bridge token exactly once', () => 
     ttlMs: 60_000,
   });
 
+  assert.match(session.encryption.keyId, /^[A-Za-z0-9_-]{16,64}$/);
+  assert.equal(Buffer.from(session.encryption.key, 'base64url').length, 32);
+
   assert.deepEqual(session.validate('one-time-code', 2_000), { ok: true });
   assert.deepEqual(session.claim('one-time-code', 2_000), {
     ok: true,

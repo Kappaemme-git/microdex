@@ -37,9 +37,31 @@ test('pairing URLs round-trip without changing credentials', () => {
   };
   assert.deepEqual(parsePairingUrl(buildPairingUrl(credentials)), credentials);
   assert.deepEqual(parsePairingUrl(buildPairingHttpUrl(credentials)), credentials);
+
+  const encryptedCredentials = {
+    ...credentials,
+    e2ee: {
+      keyId: 'encrypted_client_123456',
+      key: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    },
+  };
+  assert.deepEqual(parsePairingUrl(buildPairingUrl(encryptedCredentials)), encryptedCredentials);
+  assert.deepEqual(parsePairingUrl(buildPairingHttpUrl(encryptedCredentials)), encryptedCredentials);
 });
 
 test('one-time pairing QR codes are parsed without exposing a persistent token', () => {
+  const encryptedKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  assert.deepEqual(
+    parsePairingUrl(
+      `https://microdex-relay.microdex-cli.workers.dev/v1/devices/abcdefghijklmnopqrstuv/pair?code=E2EE-CODE#e2ee=1&keyId=encrypted_client_123456&key=${encryptedKey}`,
+    ),
+    {
+      bridgeUrl:
+        'https://microdex-relay.microdex-cli.workers.dev/v1/devices/abcdefghijklmnopqrstuv',
+      code: 'E2EE-CODE',
+      e2ee: { keyId: 'encrypted_client_123456', key: encryptedKey },
+    },
+  );
   assert.deepEqual(
     parsePairingUrl(
       'https://microdex-relay.microdex-cli.workers.dev/v1/devices/abcdefghijklmnopqrstuv/pair?code=STABLE-CODE',
@@ -98,6 +120,9 @@ test('foreign and incomplete QR codes are rejected', () => {
   assert.throws(() => parsePairingUrl('https://example.com'));
   assert.throws(() => parsePairingUrl('microdex://pair?url=http://192.168.1.17:3210'));
   assert.throws(() => parsePairingUrl('http://192.168.1.17:3210/pair'));
+  assert.throws(() => parsePairingUrl(
+    'https://relay.example/v1/devices/abcdefghijklmnopqrstuv/pair?code=CODE#e2ee=1&keyId=missing_key_123456',
+  ));
 });
 
 test('the phone supports QR pairing and automatic network reconnection', () => {
@@ -113,6 +138,8 @@ test('the phone supports QR pairing and automatic network reconnection', () => {
   assert.match(controllerSource, /reconnectAttempt/);
   assert.match(bridgeClientSource, /\$\{basePath\}\/api\/remote\/events/);
   assert.match(bridgeClientSource, /payload\.code === 'MAC_OFFLINE'/);
+  assert.match(bridgeClientSource, /type: 'e2ee-auth'/);
+  assert.match(controllerSource, /STORAGE_E2EE/);
 });
 
 test('the controller is gated until a Mac is paired and online', () => {
@@ -139,6 +166,7 @@ test('the desktop bridge displays a Microdex pairing QR', () => {
   assert.match(bridgeSource, /printQr\(pairingUrl, qrcode\)/);
   assert.match(bridgeSource, /pairingUrl\.searchParams\.set\('code', pairingSession\.code\)/);
   assert.match(bridgeSource, /transport: remoteTunnelState\.transport/);
+  assert.match(bridgeSource, /pairingUrl\.hash = new URLSearchParams/);
   assert.doesNotMatch(bridgeSource, /pairingHttpUrl\.searchParams\.set\('token'/);
 });
 

@@ -45,7 +45,7 @@ phone can use Wi-Fi or mobile data without sharing the Mac's network.
 
 ## 🚀 Quick Start
 
-Requirements: macOS, Node.js 20+, and Codex installed and logged in. The phone
+Requirements: macOS, Node.js 20.19+, and Codex installed and logged in. The phone
 and Mac do not need to use the same Wi-Fi network.
 
 1. Install the desktop CLI:
@@ -156,12 +156,16 @@ node bridge/scripts/set-fast.mjs on --config /tmp/microdex-test-config.toml
 
 - Every bridge action requires an authenticated credential stored with mode `0600` in `~/.microdex/access-token`.
 - The QR contains a separate one-time pairing code, expires after 10 minutes, and cannot be reused after a successful claim.
-- The persistent bridge credential is returned only after the one-time pairing exchange and is stored in the iOS Keychain by the app.
+- Every new pairing creates a separate 256-bit end-to-end encryption key. The key is carried in the QR URL fragment, which is not sent to the relay.
+- Commands, messages, task state, the persistent bridge credential, and live events are encrypted between the phone and Mac with authenticated XChaCha20-Poly1305. Cloudflare relays ciphertext and cannot decrypt their contents.
+- The persistent bridge credential and encryption key are returned only inside the encrypted pairing exchange and are stored in the iOS Keychain by the app.
 - Remote access uses an outbound-only Cloudflare Worker relay and never opens a router port.
-- A Cloudflare Quick Tunnel remains available only as a temporary fallback; its bundled `cloudflared` archive is pinned and verified with SHA-256 before execution.
+- The public relay rejects legacy unencrypted remote sessions. Existing beta users scan one fresh QR after upgrading.
+- A Cloudflare Quick Tunnel is available only as an explicit development fallback; its bundled `cloudflared` archive is pinned and verified with SHA-256 before execution.
 - Public HTTP bridge addresses are rejected; remote pairing must use HTTPS.
 - The phone cannot submit arbitrary commands.
 - Local hooks use predefined names inside `bridge/hooks/`.
+- `microdex revoke-all` rotates the bridge credential, removes every paired phone key, and requires a fresh QR on each phone.
 
 Useful environment variables:
 
@@ -171,7 +175,8 @@ MICRODEX_PORT=3210 npm run bridge
 MICRODEX_CONFIG_PATH=/path/to/config.toml npm run bridge
 MICRODEX_REMOTE_ACCESS=0 npm run bridge
 MICRODEX_RELAY_URL=https://your-relay.example.com npm run bridge
-MICRODEX_QUICK_TUNNEL=0 npm run bridge
+MICRODEX_QUICK_TUNNEL=1 npm run bridge
+MICRODEX_ALLOW_LEGACY_REMOTE=1 npm run bridge
 MICRODEX_CLOUDFLARED_BIN=/path/to/cloudflared npm run bridge
 ```
 
@@ -179,9 +184,13 @@ Microdex creates a random relay identity on the Mac and stores it with mode
 `0600` in `~/.microdex/relay-device.json`. Restarting the bridge reuses that
 identity and the same public HTTPS address, so a paired phone does not need a
 new QR. If the Mac is offline or asleep, the app waits and reconnects
-automatically when the bridge returns. Cloudflare transports the encrypted TLS
-traffic; the app credential is still validated by the user's own Mac and is
-never stored as phone credentials by the relay.
+automatically when the bridge returns. The relay stores only a one-way digest
+of the Mac connector secret; it never stores phone credentials or end-to-end
+keys. Use `microdex uninstall --purge` to remove the durable relay room and all
+local bridge credentials.
+
+See [PRIVACY.md](PRIVACY.md) for the project privacy policy and
+[docs/APP_STORE_RELEASE.md](docs/APP_STORE_RELEASE.md) for the release checklist.
 
 ---
 

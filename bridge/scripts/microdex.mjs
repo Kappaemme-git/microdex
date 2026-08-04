@@ -26,11 +26,14 @@ import {
   nativeShimPaths,
   requestNativeShim,
 } from '../lib/native-shim-client.mjs';
+import { deletePersistentRelayRoom } from '../lib/remote-relay.mjs';
 
 const VERSION = BRIDGE_VERSION;
 const DEFAULT_PORT = 3210;
 const stateDir = process.env.MICRODEX_HOME || path.join(os.homedir(), '.microdex');
 const tokenPath = path.join(stateDir, 'access-token');
+const e2eeClientsPath = path.join(stateDir, 'e2ee-clients.json');
+const relayIdentityPath = path.join(stateDir, 'relay-device.json');
 const runtimeDir = path.join(stateDir, 'runtime');
 const runtimeCliPath = path.join(
   runtimeDir,
@@ -74,6 +77,7 @@ function printHelp() {
     microdex pair       Show a fresh pairing QR
     microdex status     Check the background bridge
     microdex restart    Restart the background bridge
+    microdex revoke-all Revoke every paired phone and rotate the access key
     microdex native     Relaunch Codex with real Micro input + lighting
     microdex native status|stop|test
     microdex uninstall  Remove the background service
@@ -639,15 +643,16 @@ async function setup() {
 
 async function doctor() {
   const checks = [];
-  const nodeMajor = Number(process.versions.node.split('.')[0]);
+  const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
+  const supportedNode = nodeMajor > 20 || (nodeMajor === 20 && nodeMinor >= 19);
   checks.push({
     ok: process.platform === 'darwin',
     label: 'macOS',
     detail: process.platform === 'darwin' ? os.release() : `${process.platform} is not supported yet`,
   });
   checks.push({
-    ok: nodeMajor >= 20,
-    label: 'Node.js 20+',
+    ok: supportedNode,
+    label: 'Node.js 20.19+',
     detail: process.version,
   });
 
@@ -746,6 +751,43 @@ async function restart() {
   printCheck('Bridge restarted', 'Your iPhone will reconnect automatically');
 }
 
+async function confirmRevokeAll() {
+  if (process.argv.includes('--yes')) return true;
+  if (!process.stdin.isTTY) {
+    throw new Error('Run microdex revoke-all --yes in a non-interactive Terminal.');
+  }
+  const prompt = createInterface({ input: process.stdin, output: process.stdout });
+  const answer = (await prompt.question(
+    '  Revoke every paired phone? Each phone must scan a new QR. [y/N] ',
+  )).trim().toLowerCase();
+  prompt.close();
+  return answer === 'y' || answer === 'yes';
+}
+
+async function revokeAll() {
+  if (!await exists(launchAgentPath)) {
+    throw new Error('The background service is not installed. Run microdex setup first.');
+  }
+  printHeader(VERSION);
+  if (!await confirmRevokeAll()) {
+    printWarning('No devices were revoked');
+    return;
+  }
+
+  const target = `${launchDomain}/${launchAgentLabel}`;
+  await run('launchctl', ['bootout', target], { allowFailure: true });
+  await waitForLaunchAgentToUnload();
+  await Promise.all([
+    rm(tokenPath, { force: true }),
+    rm(e2eeClientsPath, { force: true }),
+  ]);
+  await persistentToken();
+  await enableAutomaticStartup();
+  if (!await waitForBridge()) throw new Error('The bridge did not restart after revoking devices.');
+  printCheck('All phones revoked', 'The bridge access key was rotated');
+  printWarning('Pair again', 'Run microdex pair and scan the new encrypted QR');
+}
+
 async function uninstall() {
   printHeader(VERSION);
   await run('launchctl', ['bootout', `${launchDomain}/${launchAgentLabel}`], {
@@ -754,7 +796,14 @@ async function uninstall() {
   await rm(launchAgentPath, { force: true });
   await rm(runtimeDir, { recursive: true, force: true });
   await rm(logsDir, { recursive: true, force: true });
-  if (process.argv.includes('--purge')) await rm(tokenPath, { force: true });
+  if (process.argv.includes('--purge')) {
+    await deletePersistentRelayRoom({ stateDir }).catch(() => false);
+    await Promise.all([
+      rm(tokenPath, { force: true }),
+      rm(e2eeClientsPath, { force: true }),
+      rm(relayIdentityPath, { force: true }),
+    ]);
+  }
   printCheck('Background service removed');
   if (!process.argv.includes('--purge')) {
     printWarning('Pairing key preserved', 'Use uninstall --purge to remove it too');
@@ -802,6 +851,9 @@ try {
       break;
     case 'restart':
       await restart();
+      break;
+    case 'revoke-all':
+      await revokeAll();
       break;
     case 'native':
       await nativeMode();

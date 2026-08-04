@@ -49,13 +49,15 @@ test('pairing prefers a persistent relay and keeps Quick Tunnel as a fallback', 
   assert.doesNotMatch(tunnelSource, /port forwarding|upnp/i);
 });
 
-test('the CLI exposes lifecycle commands for the background service', () => {
-  for (const command of ['status', 'restart', 'native', 'uninstall']) {
+test('the CLI exposes lifecycle and emergency revocation commands', () => {
+  for (const command of ['status', 'restart', 'native', 'revoke-all', 'uninstall']) {
     assert.match(cliSource, new RegExp(`case '${command}'`));
   }
   assert.match(cliSource, /launchctl/);
   assert.match(cliSource, /bootout/);
   assert.match(cliSource, /kickstart/);
+  assert.match(cliSource, /rm\(e2eeClientsPath/);
+  assert.match(cliSource, /rm\(tokenPath/);
 });
 
 test('native mode is explicit, reversible, and never modifies the Codex app bundle', () => {

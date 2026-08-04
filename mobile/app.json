@@ -20,7 +20,6 @@
       "bundleIdentifier": "cc.microdex.app",
       "buildNumber": "1",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false,
         "NSLocalNetworkUsageDescription": "Microdex uses your local network to send commands to the Codex bridge on your computer.",
         "NSCameraUsageDescription": "Microdex uses the camera to scan the secure pairing QR shown by the desktop bridge.",
         "NSAppTransportSecurity": {
@@ -38,8 +37,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.CAMERA"
       ]
     },
     "web": {

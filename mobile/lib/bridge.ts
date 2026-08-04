@@ -1,5 +1,12 @@
 import Constants from 'expo-constants';
 
+import {
+  type E2EEEnvelope,
+  type E2EEKeyMaterial,
+  openE2EE,
+} from './e2ee-core.ts';
+import { randomE2EEId, sealMobileE2EE } from './e2ee.ts';
+
 /** Max and Ultra are excluded: see REASONING_EFFORTS in bridge/lib/codex-config.mjs. */
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -94,6 +101,7 @@ export type BridgeStatus = {
     actionAvailability: boolean;
     visibleDesktopRouting?: boolean;
     nativeHardware?: boolean;
+    endToEndEncryption?: boolean;
   };
   connection?: {
     remoteAccess: string;
@@ -118,6 +126,120 @@ type RequestOptions = {
   method?: 'GET' | 'POST';
   body?: Record<string, unknown>;
 };
+
+type E2EESession = {
+  sessionId: string;
+  expiresAt: number;
+};
+
+const e2eeSessions = new Map<string, Promise<E2EESession>>();
+const seenEventIds = new Map<string, Set<string>>();
+const registeredEncryption = new Map<string, E2EEKeyMaterial>();
+
+function normalizedBridgeKey(bridgeUrl: string) {
+  return bridgeUrl.trim().replace(/\/$/, '');
+}
+
+export function registerBridgeEncryption(
+  bridgeUrl: string,
+  material: E2EEKeyMaterial | null,
+) {
+  const key = normalizedBridgeKey(bridgeUrl);
+  const previous = registeredEncryption.get(key);
+  if (previous) clearE2EESession(key, previous);
+  if (material) registeredEncryption.set(key, material);
+  else registeredEncryption.delete(key);
+}
+
+function e2eeSessionKey(bridgeUrl: string, material: E2EEKeyMaterial) {
+  return `${bridgeUrl.replace(/\/$/, '')}:${material.keyId}`;
+}
+
+function clearE2EESession(bridgeUrl: string, material: E2EEKeyMaterial) {
+  const key = e2eeSessionKey(bridgeUrl, material);
+  e2eeSessions.delete(key);
+  seenEventIds.delete(key);
+}
+
+async function ensureE2EESession(
+  bridgeUrl: string,
+  token: string,
+  material: E2EEKeyMaterial,
+  signal?: AbortSignal,
+) {
+  const key = e2eeSessionKey(bridgeUrl, material);
+  const existing = e2eeSessions.get(key);
+  if (existing) {
+    const session = await existing;
+    if (session.expiresAt > Date.now() + 10_000) return session;
+    clearE2EESession(bridgeUrl, material);
+  }
+
+  const pending = (async () => {
+    const requestId = await randomE2EEId();
+    const envelope = await sealMobileE2EE(material, 'session', {
+      requestId,
+      issuedAt: Date.now(),
+      token,
+    });
+    const response = await fetch(`${bridgeUrl.replace(/\/$/, '')}/api/e2ee/session`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ envelope }),
+      signal,
+    });
+    const result = (await response.json()) as {
+      envelope?: E2EEEnvelope;
+      error?: string;
+      code?: string;
+    };
+    if (!response.ok || !result.envelope) {
+      if (response.status === 401) {
+        throw new BridgeAuthError(
+          'This Mac no longer accepts the encrypted pairing. Run "microdex pair" and scan the new QR.',
+        );
+      }
+      throw new BridgeConnectionError(result.error || 'The encrypted bridge session could not start.');
+    }
+    const payload = openE2EE<E2EESession>(
+      material,
+      `session-response:${requestId}`,
+      result.envelope,
+    );
+    if (
+      !/^[A-Za-z0-9_-]{16,64}$/.test(payload.sessionId) ||
+      !Number.isFinite(payload.expiresAt) ||
+      payload.expiresAt <= Date.now()
+    ) {
+      throw new BridgeAuthError('The Mac returned an invalid encrypted session. Pair it again.');
+    }
+    return payload;
+  })();
+  e2eeSessions.set(key, pending);
+  try {
+    return await pending;
+  } catch (error) {
+    e2eeSessions.delete(key);
+    throw error;
+  }
+}
+
+function bridgeErrorForStatus(status: number, payload: { error?: string; code?: string }) {
+  const message = payload.error ?? `Bridge error ${status}`;
+  if (status === 401) {
+    return new BridgeAuthError(
+      payload.code === 'E2EE_REQUIRED'
+        ? 'This saved pairing predates end-to-end encryption. Run "microdex pair" on the Mac and scan the new QR once.'
+        : 'This Mac no longer accepts the saved access code. Run "microdex pair" on the Mac and scan the new QR.',
+    );
+  }
+  if (status === 503 && payload.code === 'MAC_OFFLINE') {
+    return new BridgeConnectionError(
+      'Your Mac is offline or sleeping. Microdex will reconnect automatically when it comes back online.',
+    );
+  }
+  return new Error(message);
+}
 
 export class BridgeConnectionError extends Error {
   constructor(message: string) {
@@ -178,16 +300,119 @@ export function bridgeEventsUrl(bridgeUrl: string) {
   return url.toString();
 }
 
+export async function bridgeEventAuthentication(
+  bridgeUrl: string,
+  token: string,
+  material: E2EEKeyMaterial,
+) {
+  const session = await ensureE2EESession(bridgeUrl, token, material);
+  const requestId = await randomE2EEId();
+  const envelope = await sealMobileE2EE(
+    material,
+    `events-auth:${session.sessionId}`,
+    { type: 'events-auth', requestId, issuedAt: Date.now() },
+  );
+  return {
+    sessionId: session.sessionId,
+    message: {
+      type: 'e2ee-auth' as const,
+      envelope: { ...envelope, sessionId: session.sessionId },
+    },
+  };
+}
+
+export function openBridgeEvent(
+  bridgeUrl: string,
+  material: E2EEKeyMaterial,
+  sessionId: string,
+  envelope: E2EEEnvelope,
+) {
+  const event = openE2EE<{
+    eventId: string;
+    issuedAt: number;
+    payload: { type: 'state' | 'error'; state?: RemoteState; message?: string };
+  }>(material, `event:${sessionId}`, envelope);
+  if (
+    !/^[A-Za-z0-9_-]{16,64}$/.test(event.eventId) ||
+    !Number.isFinite(event.issuedAt) ||
+    Math.abs(Date.now() - event.issuedAt) > 5 * 60 * 1000
+  ) {
+    throw new BridgeAuthError('An invalid encrypted live update was rejected.');
+  }
+  const key = e2eeSessionKey(bridgeUrl, material);
+  const seen = seenEventIds.get(key) ?? new Set<string>();
+  if (seen.has(event.eventId)) throw new BridgeAuthError('A replayed live update was rejected.');
+  seen.add(event.eventId);
+  if (seen.size > 2_048) seen.delete(seen.values().next().value as string);
+  seenEventIds.set(key, seen);
+  return event.payload;
+}
+
+export function resetEncryptedBridgeSession(
+  bridgeUrl: string,
+  material: E2EEKeyMaterial,
+) {
+  clearE2EESession(bridgeUrl, material);
+}
+
 export async function bridgeRequest<T>(
   bridgeUrl: string,
   token: string,
   path: string,
   options: RequestOptions = {},
+  e2ee?: E2EEKeyMaterial | null,
 ) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 6500);
+  const encryption = e2ee ?? registeredEncryption.get(normalizedBridgeKey(bridgeUrl));
 
   try {
+    if (encryption) {
+      const encryptedRequest = async (retrySession: boolean): Promise<T> => {
+        const session = await ensureE2EESession(bridgeUrl, token, encryption, controller.signal);
+        const requestId = await randomE2EEId();
+        const envelope = await sealMobileE2EE(encryption, `request:${session.sessionId}`, {
+          requestId,
+          issuedAt: Date.now(),
+          method: options.method ?? 'GET',
+          path,
+          body: options.body,
+        });
+        const response = await fetch(`${bridgeUrl.replace(/\/$/, '')}/api/e2ee`, {
+          method: 'POST',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ envelope: { ...envelope, sessionId: session.sessionId } }),
+          signal: controller.signal,
+        });
+        const outer = (await response.json()) as {
+          envelope?: E2EEEnvelope;
+          error?: string;
+          code?: string;
+        };
+        if (response.status === 409 && outer.code === 'E2EE_SESSION_EXPIRED' && retrySession) {
+          clearE2EESession(bridgeUrl, encryption);
+          return encryptedRequest(false);
+        }
+        if (!response.ok || !outer.envelope) throw bridgeErrorForStatus(response.status, outer);
+        const decrypted = openE2EE<{
+          status: number;
+          contentType?: string;
+          body: string;
+        }>(encryption, `response:${session.sessionId}:${requestId}`, outer.envelope);
+        let payload: T & { error?: string; code?: string };
+        try {
+          payload = JSON.parse(decrypted.body) as T & { error?: string; code?: string };
+        } catch {
+          throw new BridgeConnectionError('The Mac returned an invalid encrypted response.');
+        }
+        if (decrypted.status < 200 || decrypted.status >= 300) {
+          throw bridgeErrorForStatus(decrypted.status, payload);
+        }
+        return payload;
+      };
+      return await encryptedRequest(true);
+    }
+
     const response = await fetch(`${bridgeUrl.replace(/\/$/, '')}${path}`, {
       method: options.method ?? 'GET',
       headers: {
@@ -201,18 +426,7 @@ export async function bridgeRequest<T>(
 
     const payload = (await response.json()) as T & { error?: string; code?: string };
     if (!response.ok) {
-      const message = payload.error ?? `Bridge error ${response.status}`;
-      if (response.status === 401) {
-        throw new BridgeAuthError(
-          'This Mac no longer accepts the saved access code. Run "microdex pair" on the Mac and scan the new QR.',
-        );
-      }
-      if (response.status === 503 && payload.code === 'MAC_OFFLINE') {
-        throw new BridgeConnectionError(
-          'Your Mac is offline or sleeping. Microdex will reconnect automatically when it comes back online.',
-        );
-      }
-      throw new Error(message);
+      throw bridgeErrorForStatus(response.status, payload);
     }
     return payload;
   } catch (error) {

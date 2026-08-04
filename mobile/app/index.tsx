@@ -51,13 +51,21 @@ import {
   QueuedMessage,
   RemoteState,
   ReasoningEffort,
+  bridgeEventAuthentication,
   bridgeEventsUrl,
   bridgeRequest,
   inferBridgeUrl,
   isBridgeAuthError,
   isBridgeConnectionError,
   mobileAppInfo,
+  openBridgeEvent,
+  registerBridgeEncryption,
+  resetEncryptedBridgeSession,
 } from '@/lib/bridge';
+import {
+  type E2EEKeyMaterial,
+  normalizeE2EEKeyMaterial,
+} from '@/lib/e2ee-core';
 import { Fonts } from '@/lib/fonts';
 import { suggestedKeycapForCommand } from '@/lib/keycap-catalog';
 import {
@@ -93,6 +101,7 @@ type Styles = ReturnType<typeof createStyles>;
 
 const STORAGE_URL = 'microdex.bridge.url';
 const STORAGE_TOKEN = 'microdex.bridge.token';
+const STORAGE_E2EE = 'microdex.bridge.e2ee.v1';
 const STORAGE_PROGRAMMED_KEYS = 'microdex.programmable.keys.v2';
 const STORAGE_LEGACY_PROGRAMMED_KEYS = 'microdex.programmable.keys.v1';
 const STORAGE_ENCODER_MODE = 'microdex.encoder.mode.v1';
@@ -178,7 +187,7 @@ const VISUAL_PREVIEW_REMOTE: RemoteState = {
 };
 const VISUAL_PREVIEW_STATUS: BridgeStatus = {
   connected: true,
-  bridge: { name: 'Microdex Preview', version: 'dev', protocolVersion: 2 },
+  bridge: { name: 'Microdex Preview', version: 'dev', protocolVersion: 3 },
   capabilities: {
     verifiedSettings: true,
     remoteChat: true,
@@ -283,6 +292,7 @@ export default function ControllerScreen() {
   const insets = useSafeAreaInsets();
   const [bridgeUrl, setBridgeUrl] = useState(inferBridgeUrl());
   const [token, setToken] = useState(EXPO_BRIDGE_TOKEN);
+  const [e2ee, setE2ee] = useState<E2EEKeyMaterial | null>(null);
   const [status, setStatus] = useState<BridgeStatus | null>(
     VISUAL_PREVIEW ? VISUAL_PREVIEW_STATUS : null,
   );
@@ -465,12 +475,14 @@ export default function ControllerScreen() {
       const [
         savedUrl,
         savedToken,
+        savedE2EE,
         savedKeys,
         savedLegacyKeys,
         savedEncoderMode,
       ] = await Promise.all([
         readStoredValue(STORAGE_URL),
         readStoredValue(STORAGE_TOKEN),
+        readStoredValue(STORAGE_E2EE),
         readStoredValue(STORAGE_PROGRAMMED_KEYS),
         readStoredValue(STORAGE_LEGACY_PROGRAMMED_KEYS),
         readStoredValue(STORAGE_ENCODER_MODE),
@@ -478,6 +490,15 @@ export default function ControllerScreen() {
       if (savedUrl && !EXPO_BRIDGE_TOKEN) setBridgeUrl(savedUrl);
       if (EXPO_BRIDGE_TOKEN) setToken(EXPO_BRIDGE_TOKEN);
       else if (savedToken) setToken(savedToken);
+      if (savedUrl && savedE2EE && !EXPO_BRIDGE_TOKEN) {
+        try {
+          const encryption = normalizeE2EEKeyMaterial(JSON.parse(savedE2EE));
+          registerBridgeEncryption(savedUrl, encryption);
+          setE2ee(encryption);
+        } catch {
+          await deleteStoredValue(STORAGE_E2EE);
+        }
+      }
       const storedKeys = savedKeys ?? savedLegacyKeys;
       if (storedKeys) {
         const migratedKeys = parseProgrammedKeys(storedKeys);
@@ -619,6 +640,7 @@ export default function ControllerScreen() {
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let fallbackTimer: ReturnType<typeof setInterval> | null = null;
     let retries = 0;
+    let eventSessionId: string | null = null;
 
     const startFallback = () => {
       if (fallbackTimer) return;
@@ -634,15 +656,35 @@ export default function ControllerScreen() {
       setLiveChannel('connecting');
       socket = new WebSocket(bridgeEventsUrl(bridgeUrl));
       socket.onopen = () => {
-        socket?.send(JSON.stringify({ type: 'auth', token }));
+        void (async () => {
+          try {
+            if (e2ee) {
+              const auth = await bridgeEventAuthentication(bridgeUrl, token, e2ee);
+              eventSessionId = auth.sessionId;
+              socket?.send(JSON.stringify(auth.message));
+            } else {
+              socket?.send(JSON.stringify({ type: 'auth', token }));
+            }
+          } catch (error) {
+            announce(readableError(error), true);
+            socket?.close();
+          }
+        })();
       };
       socket.onmessage = (event) => {
         try {
           const message = JSON.parse(String(event.data)) as {
-            type: 'ready' | 'state' | 'error';
+            type: 'ready' | 'state' | 'error' | 'e2ee';
             state?: RemoteState;
             message?: string;
+            envelope?: Parameters<typeof openBridgeEvent>[3];
           };
+          if (message.type === 'e2ee' && e2ee && eventSessionId && message.envelope) {
+            const decrypted = openBridgeEvent(bridgeUrl, e2ee, eventSessionId, message.envelope);
+            if (decrypted.type === 'state' && decrypted.state) setRemote(decrypted.state);
+            if (decrypted.type === 'error' && decrypted.message) announce(decrypted.message, true);
+            return;
+          }
           if (message.type === 'ready') {
             retries = 0;
             setLiveChannel('live');
@@ -659,6 +701,8 @@ export default function ControllerScreen() {
       socket.onerror = () => socket?.close();
       socket.onclose = () => {
         if (cancelled) return;
+        if (e2ee) resetEncryptedBridgeSession(bridgeUrl, e2ee);
+        eventSessionId = null;
         setLiveChannel('connecting');
         startFallback();
         retries += 1;
@@ -674,12 +718,13 @@ export default function ControllerScreen() {
       stopFallback();
       socket?.close();
     };
-  }, [announce, bridgeUrl, refreshRemote, status, token]);
+  }, [announce, bridgeUrl, e2ee, refreshRemote, status, token]);
 
   const connectToBridge = useCallback(async (
     candidateUrl: string,
     candidateToken: string,
     interactive = false,
+    candidateE2EE: E2EEKeyMaterial | null = e2ee,
   ) => {
     if (!candidateUrl.trim() || !candidateToken.trim()) {
       if (interactive) announce('Enter the bridge address and access code.', true);
@@ -690,17 +735,24 @@ export default function ControllerScreen() {
     setBridgeConnecting(true);
     if (interactive) setLoadingAction('connect');
     try {
+      registerBridgeEncryption(candidateUrl, candidateE2EE);
       const nextStatus = await bridgeRequest<BridgeStatus>(
         candidateUrl,
         candidateToken,
         '/api/status',
+        {},
+        candidateE2EE,
       );
       await Promise.all([
         writeStoredValue(STORAGE_URL, candidateUrl.trim()),
         writeStoredValue(STORAGE_TOKEN, candidateToken.trim()),
+        candidateE2EE
+          ? writeStoredValue(STORAGE_E2EE, JSON.stringify(candidateE2EE))
+          : deleteStoredValue(STORAGE_E2EE),
       ]);
       setBridgeUrl(candidateUrl.trim());
       setToken(candidateToken.trim());
+      setE2ee(candidateE2EE);
       setStatus(nextStatus);
       if (nextStatus.remote?.online) setRemote(nextStatus.remote as RemoteState);
       setSettingsVisible(false);
@@ -726,7 +778,10 @@ export default function ControllerScreen() {
         credentialRejected.current = true;
         announce(readableError(error), true);
         await deleteStoredValue(STORAGE_TOKEN);
+        await deleteStoredValue(STORAGE_E2EE);
+        registerBridgeEncryption(candidateUrl, null);
         setToken('');
+        setE2ee(null);
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         return false;
       }
@@ -740,7 +795,7 @@ export default function ControllerScreen() {
       setBridgeConnecting(false);
       if (interactive) setLoadingAction(null);
     }
-  }, [announce]);
+  }, [announce, e2ee]);
 
   const acceptPairingCode = useCallback(async (value: string) => {
     if (pairingInFlight.current) return;
@@ -757,10 +812,19 @@ export default function ControllerScreen() {
       await Promise.all([
         writeStoredValue(STORAGE_URL, credentials.bridgeUrl),
         writeStoredValue(STORAGE_TOKEN, credentials.token),
+        credentials.e2ee
+          ? writeStoredValue(STORAGE_E2EE, JSON.stringify(credentials.e2ee))
+          : deleteStoredValue(STORAGE_E2EE),
       ]);
       setBridgeUrl(credentials.bridgeUrl);
       setToken(credentials.token);
-      await connectToBridge(credentials.bridgeUrl, credentials.token, true);
+      setE2ee(credentials.e2ee ?? null);
+      await connectToBridge(
+        credentials.bridgeUrl,
+        credentials.token,
+        true,
+        credentials.e2ee ?? null,
+      );
     } catch (error) {
       announce(readableError(error), true);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -862,16 +926,19 @@ export default function ControllerScreen() {
     await Promise.all([
       deleteStoredValue(STORAGE_URL),
       deleteStoredValue(STORAGE_TOKEN),
+      deleteStoredValue(STORAGE_E2EE),
     ]);
+    registerBridgeEncryption(bridgeUrl, null);
     setBridgeUrl(inferBridgeUrl());
     setToken('');
+    setE2ee(null);
     setStatus(null);
     setRemote(null);
     setSettingsVisible(false);
     reconnectAttempt.current = 0;
     announce('Mac removed. Pair again to use Microdex.');
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [announce]);
+  }, [announce, bridgeUrl]);
 
   useEffect(() => {
     if (!incomingUrl) return;

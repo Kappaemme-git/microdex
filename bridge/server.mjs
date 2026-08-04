@@ -32,7 +32,12 @@ import {
 import { attachRemoteEvents } from './lib/remote-events.mjs';
 import { RemoteMessageQueue } from './lib/remote-message-queue.mjs';
 import { PairingSession } from './lib/pairing-session.mjs';
-import { createRemoteRelay } from './lib/remote-relay.mjs';
+import {
+  E2EEAuthenticationError,
+  E2EEClientRegistry,
+} from './lib/e2ee-client-registry.mjs';
+import { openE2EE, sealE2EE } from './lib/e2ee.mjs';
+import { createRemoteRelay, safeLocalApiPath } from './lib/remote-relay.mjs';
 import { createRemoteTunnel } from './lib/remote-tunnel.mjs';
 import {
   applyFastSetting,
@@ -64,12 +69,17 @@ const hooksDir = process.env.MICRODEX_HOOKS_DIR || path.join(bridgeDir, 'hooks')
 const backgroundMode = process.env.MICRODEX_BACKGROUND === '1';
 const remoteAccessEnabled = process.env.MICRODEX_REMOTE_ACCESS !== '0';
 const quickTunnelEnabled =
-  remoteAccessEnabled && process.env.MICRODEX_QUICK_TUNNEL !== '0';
+  remoteAccessEnabled && process.env.MICRODEX_QUICK_TUNNEL === '1';
 let pairingSession = new PairingSession({ accessToken });
+const e2eeClients = new E2EEClientRegistry({ stateDir: microdexHome });
 const stableRelay = createRemoteRelay({
   port,
   stateDir: microdexHome,
   accessToken,
+  authenticate: tokenMatches,
+  e2eeClients,
+  claimEncryptedPairing,
+  allowLegacy: process.env.MICRODEX_ALLOW_LEGACY_REMOTE === '1',
   enabled: remoteAccessEnabled,
 });
 const quickTunnel = createRemoteTunnel({
@@ -132,6 +142,47 @@ function tokenMatches(provided = '') {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
+async function claimEncryptedPairing(envelope) {
+  const material = pairingSession.encryption;
+  if (envelope?.keyId !== material.keyId) throw new E2EEAuthenticationError();
+  let payload;
+  try {
+    payload = openE2EE(material, 'pair', envelope);
+  } catch {
+    throw new E2EEAuthenticationError();
+  }
+  const requestId = String(payload.requestId ?? '').trim();
+  const issuedAt = Number(payload.issuedAt);
+  if (
+    !/^[A-Za-z0-9_-]{16,64}$/.test(requestId) ||
+    !Number.isFinite(issuedAt) ||
+    Math.abs(Date.now() - issuedAt) > 5 * 60 * 1000
+  ) {
+    throw new E2EEAuthenticationError();
+  }
+  const result = pairingSession.claim(String(payload.code ?? ''));
+  let responsePayload;
+  if (!result.ok) {
+    responsePayload = {
+      error: result.reason === 'expired'
+        ? 'This pairing QR has expired. Run microdex pair again.'
+        : result.reason === 'claimed'
+          ? 'This pairing QR has already been used.'
+          : 'Invalid pairing code.',
+      code: result.reason === 'expired' ? 'PAIRING_EXPIRED' : 'PAIRING_REJECTED',
+    };
+  } else {
+    await e2eeClients.addClient(material);
+    console.log('');
+    printCheck('iPhone paired', 'End-to-end encrypted session saved');
+    console.log(`  ${ui.dim('You can start controlling Codex now.')}\n`);
+    responsePayload = { token: result.token, protocolVersion: BRIDGE_PROTOCOL_VERSION };
+  }
+  return {
+    envelope: sealE2EE(material, `pair-response:${requestId}`, responsePayload),
+  };
+}
+
 async function readBody(request) {
   const chunks = [];
   let total = 0;
@@ -146,6 +197,41 @@ async function readBody(request) {
   } catch {
     throw Object.assign(new Error('Invalid JSON.'), { statusCode: 400 });
   }
+}
+
+async function handleDirectEncryptedRequest(pathname, body) {
+  if (pathname === '/api/e2ee/pair') return claimEncryptedPairing(body.envelope);
+  if (pathname === '/api/e2ee/session') {
+    const session = await e2eeClients.createSession(body.envelope, tokenMatches);
+    return { envelope: session.envelope };
+  }
+  if (pathname !== '/api/e2ee') {
+    throw Object.assign(new Error('Unknown encrypted Microdex endpoint.'), { statusCode: 404 });
+  }
+
+  const context = await e2eeClients.openSessionMessage(body.envelope, 'request');
+  const requestedPath = safeLocalApiPath(context.payload.path);
+  if (!requestedPath || requestedPath.startsWith('/api/e2ee')) {
+    throw Object.assign(new Error('Invalid encrypted bridge request path.'), { statusCode: 400 });
+  }
+  const method = context.payload.method === 'POST' ? 'POST' : 'GET';
+  const localResponse = await fetch(`http://127.0.0.1:${port}${requestedPath}`, {
+    method,
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Microdex-Token': accessToken,
+    },
+    body: method === 'POST' ? JSON.stringify(context.payload.body ?? {}) : undefined,
+  });
+  const responseBody = await localResponse.text();
+  return {
+    envelope: e2eeClients.sealResponse(context, {
+      status: localResponse.status,
+      contentType: localResponse.headers.get('content-type'),
+      body: responseBody,
+    }),
+  };
 }
 
 async function publicStatus() {
@@ -177,6 +263,7 @@ async function publicStatus() {
       actionAvailability: true,
       visibleDesktopRouting: true,
       nativeHardware: nativeShim.state().connected,
+      endToEndEncryption: true,
     },
     connection: {
       remoteAccess: remoteTunnelState.status,
@@ -387,6 +474,12 @@ function pairingDetails() {
   const urls = addresses.map((address) => {
     const pairingUrl = new URL(`${address.replace(/\/$/, '')}/pair`);
     pairingUrl.searchParams.set('code', pairingSession.code);
+    const encryption = pairingSession.encryption;
+    pairingUrl.hash = new URLSearchParams({
+      e2ee: '1',
+      keyId: encryption.keyId,
+      key: encryption.key,
+    }).toString();
     return pairingUrl.toString();
   });
   return {
@@ -414,6 +507,7 @@ const server = http.createServer(async (request, response) => {
         name: BRIDGE_NAME,
         version: BRIDGE_VERSION,
         protocolVersion: BRIDGE_PROTOCOL_VERSION,
+        endToEndEncryption: true,
         remoteAccess: {
           status: remoteTunnelState.status,
           ready: remoteTunnelState.ready,
@@ -448,23 +542,41 @@ const server = http.createServer(async (request, response) => {
       const deepLink = new URL('microdex:///pair');
       deepLink.searchParams.set('url', bridgeUrl);
       deepLink.searchParams.set('code', code);
+      const escapedDeepLink = deepLink.toString()
+        .replaceAll('&', '&amp;')
+        .replaceAll('"', '&quot;');
+      const nonce = randomBytes(18).toString('base64url');
       const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Microdex pairing</title>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f1418;color:#e8eef2;font-family:system-ui,sans-serif;padding:24px;text-align:center}
+<style nonce="${nonce}">body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f1418;color:#e8eef2;font-family:system-ui,sans-serif;padding:24px;text-align:center}
 a{display:inline-block;margin-top:18px;padding:14px 22px;border-radius:12px;background:#2f6fed;color:#fff;text-decoration:none;font-weight:600}
 p{opacity:.75;line-height:1.45;max-width:28rem}</style></head>
 <body><div>
 <h1>Microdex</h1>
 <p>Scan this page’s QR from <strong>Microdex → Scan pairing QR</strong>. Or open the app with the button below.</p>
 <p>This pairing code can be used once and expires shortly.</p>
-<a href="${deepLink.toString()}">Open in Microdex</a>
-</div></body></html>`;
+<a id="open-microdex" href="${escapedDeepLink}">Open in Microdex</a>
+</div><script nonce="${nonce}">
+const link=document.getElementById('open-microdex');const fragment=new URLSearchParams(location.hash.slice(1));
+if(fragment.get('e2ee')==='1'&&fragment.get('keyId')&&fragment.get('key')){const target=new URL(link.href);target.searchParams.set('e2ee','1');target.searchParams.set('keyId',fragment.get('keyId'));target.searchParams.set('key',fragment.get('key'));link.href=target.toString();}
+</script></body></html>`;
       response.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer',
+        'Content-Security-Policy': `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
       });
       return response.end(html);
+    }
+
+    if (
+      request.method === 'POST' &&
+      ['/api/e2ee/pair', '/api/e2ee/session', '/api/e2ee'].includes(url.pathname)
+    ) {
+      const body = await readBody(request);
+      return sendJson(response, 200, await handleDirectEncryptedRequest(url.pathname, body));
     }
 
     if (request.method === 'POST' && url.pathname === '/api/pair/claim') {
@@ -820,7 +932,10 @@ p{opacity:.75;line-height:1.45;max-width:28rem}</style></head>
     return sendJson(response, 404, { error: 'Endpoint not found.' });
   } catch (error) {
     const statusCode = Number(error?.statusCode) || 500;
-    return sendJson(response, statusCode, { error: error?.message || 'Internal bridge error.' });
+    return sendJson(response, statusCode, {
+      error: error?.message || 'Internal bridge error.',
+      ...(error?.code ? { code: error.code } : {}),
+    });
   }
 });
 
@@ -831,6 +946,7 @@ remoteEvents = attachRemoteEvents({
     subscribe: (listener) => codex.subscribe(listener),
   },
   authenticate: tokenMatches,
+  e2eeClients,
 });
 
 server.listen(port, host, () => {

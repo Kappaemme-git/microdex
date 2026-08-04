@@ -84,7 +84,7 @@ process.exit(0);
       response.end(JSON.stringify({
         ok: true,
         version: currentVersion,
-        protocolVersion: 2,
+        protocolVersion: 3,
       }));
       return;
     }

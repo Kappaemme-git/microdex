@@ -61,6 +61,32 @@ export async function persistentRelayIdentity(stateDir) {
   return saved;
 }
 
+export async function deletePersistentRelayRoom({
+  stateDir,
+  relayOrigin = process.env.MICRODEX_RELAY_URL || DEFAULT_RELAY_URL,
+  fetchImpl = fetch,
+}) {
+  const identityPath = path.join(stateDir, IDENTITY_FILE);
+  let identity;
+  try {
+    identity = JSON.parse(await readFile(identityPath, 'utf8'));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+  if (!validIdentity(identity)) throw new Error('The saved relay identity is invalid.');
+  const response = await fetchImpl(
+    `${relayDeviceUrl(relayOrigin, identity.deviceId)}/reset`,
+    {
+      method: 'DELETE',
+      headers: { 'X-Microdex-Device-Secret': identity.deviceSecret },
+    },
+  );
+  if (response.status === 404) return false;
+  if (!response.ok) throw new Error(`The relay room could not be removed (${response.status}).`);
+  return true;
+}
+
 export function relayDeviceUrl(relayOrigin, deviceId) {
   return `${normalizeRelayOrigin(relayOrigin)}/v1/devices/${encodeURIComponent(deviceId)}`;
 }
@@ -82,6 +108,10 @@ export function createRemoteRelay({
   port,
   stateDir,
   accessToken,
+  authenticate = () => false,
+  e2eeClients = null,
+  claimEncryptedPairing = null,
+  allowLegacy = false,
   enabled = true,
   relayOrigin = process.env.MICRODEX_RELAY_URL || DEFAULT_RELAY_URL,
   fetchImpl = fetch,
@@ -96,6 +126,8 @@ export function createRemoteRelay({
   let reconnectAttempt = 0;
   let identity = null;
   let lastState = null;
+  const legacyPhones = new Set();
+  const encryptedPhones = new Map();
   let current = {
     status: enabled ? 'idle' : 'disabled',
     ready: false,
@@ -133,13 +165,24 @@ export function createRemoteRelay({
     });
     socket.on('message', (raw) => {
       const payload = raw.toString();
+      let parsed;
       try {
-        const parsed = JSON.parse(payload);
+        parsed = JSON.parse(payload);
         if (parsed.type === 'state' && parsed.state) lastState = parsed.state;
       } catch {
         return;
       }
-      sendRelay({ type: 'event', payload });
+      if (legacyPhones.size) sendRelay({ type: 'event', payload });
+      if (e2eeClients && encryptedPhones.size) {
+        void Promise.all([...encryptedPhones].map(async ([phoneId, context]) => {
+          const envelope = e2eeClients.sealEvent(context, parsed);
+          sendRelay({
+            type: 'phone-event',
+            phoneId,
+            payload: { type: 'e2ee', envelope },
+          });
+        })).catch(() => {});
+      }
     });
     socket.once('close', () => {
       if (localEventsSocket === socket) localEventsSocket = null;
@@ -151,10 +194,50 @@ export function createRemoteRelay({
   };
 
   const answerPhoneAuthentication = async (message) => {
+    if (message.envelope && e2eeClients) {
+      try {
+        const context = await e2eeClients.openSessionMessage(message.envelope, 'events-auth');
+        if (context.payload.type !== 'events-auth') throw new Error('Invalid encrypted event request.');
+        if (!lastState) {
+          const response = await fetchImpl(`http://127.0.0.1:${port}/api/remote/state`, {
+            headers: { Accept: 'application/json', 'X-Microdex-Token': accessToken },
+          });
+          if (!response.ok) throw new Error('Codex state is unavailable.');
+          lastState = await response.json();
+        }
+        encryptedPhones.set(message.phoneId, context);
+        sendRelay({
+          type: 'phone-auth-result',
+          phoneId: message.phoneId,
+          ok: true,
+          e2ee: true,
+          stateEnvelope: e2eeClients.sealEvent(context, { type: 'state', state: lastState }),
+        });
+      } catch (error) {
+        sendRelay({
+          type: 'phone-auth-result',
+          phoneId: message.phoneId,
+          ok: false,
+          error: error?.message || 'Encrypted event authentication failed.',
+        });
+      }
+      return;
+    }
+    if (!allowLegacy) {
+      sendRelay({
+        type: 'phone-auth-result',
+        phoneId: message.phoneId,
+        ok: false,
+        error: 'This saved pairing must be upgraded to end-to-end encryption.',
+        code: 'E2EE_REQUIRED',
+      });
+      return;
+    }
     const headers = { Accept: 'application/json', 'X-Microdex-Token': String(message.token || '') };
     try {
       const response = await fetchImpl(`http://127.0.0.1:${port}/api/remote/state`, { headers });
       const payload = await response.json().catch(() => ({}));
+      if (response.ok) legacyPhones.add(message.phoneId);
       sendRelay({
         type: 'phone-auth-result',
         phoneId: message.phoneId,
@@ -172,6 +255,76 @@ export function createRemoteRelay({
     }
   };
 
+  const sendRequestResponse = (requestId, status, body, contentType = 'application/json; charset=utf-8') => {
+    sendRelay({ type: 'response', requestId, status, contentType, body });
+  };
+
+  const encryptedError = (message, error) => {
+    const status = Number(error?.statusCode) || 400;
+    sendRequestResponse(message.requestId, status, JSON.stringify({
+      error: status === 401
+        ? 'Encrypted Microdex authentication failed.'
+        : error?.message || 'Encrypted Microdex request failed.',
+      ...(error?.code ? { code: error.code } : {}),
+    }));
+  };
+
+  const answerEncryptedRelayRequest = async (message, safePath) => {
+    if (!e2eeClients) {
+      sendRequestResponse(message.requestId, 426, JSON.stringify({
+        error: 'This bridge does not support end-to-end encryption yet.',
+      }));
+      return;
+    }
+    let body;
+    try {
+      if (String(message.body || '').length > 400_000) throw new Error('Encrypted request is too large.');
+      body = JSON.parse(String(message.body || '{}'));
+    } catch (error) {
+      encryptedError(message, error);
+      return;
+    }
+    try {
+      if (safePath === '/api/e2ee/pair') {
+        if (!claimEncryptedPairing) throw new Error('Encrypted pairing is unavailable.');
+        const result = await claimEncryptedPairing(body.envelope);
+        sendRequestResponse(message.requestId, 200, JSON.stringify(result));
+        return;
+      }
+      if (safePath === '/api/e2ee/session') {
+        const session = await e2eeClients.createSession(body.envelope, authenticate);
+        sendRequestResponse(message.requestId, 200, JSON.stringify({ envelope: session.envelope }));
+        return;
+      }
+      if (safePath !== '/api/e2ee') throw new Error('Unknown encrypted Microdex endpoint.');
+
+      const context = await e2eeClients.openSessionMessage(body.envelope, 'request');
+      const requestedPath = safeLocalApiPath(context.payload.path);
+      if (!requestedPath || requestedPath.startsWith('/api/e2ee')) {
+        throw new Error('Invalid encrypted bridge request path.');
+      }
+      const method = context.payload.method === 'POST' ? 'POST' : 'GET';
+      const response = await fetchImpl(`http://127.0.0.1:${port}${requestedPath}`, {
+        method,
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-Microdex-Token': accessToken,
+        },
+        body: method === 'POST' ? JSON.stringify(context.payload.body ?? {}) : undefined,
+      });
+      const responseBody = await response.text();
+      const envelope = e2eeClients.sealResponse(context, {
+        status: response.status,
+        contentType: response.headers.get('content-type'),
+        body: responseBody,
+      });
+      sendRequestResponse(message.requestId, 200, JSON.stringify({ envelope }));
+    } catch (error) {
+      encryptedError(message, error);
+    }
+  };
+
   const answerRelayRequest = async (message) => {
     const safePath = safeLocalApiPath(message.path);
     if (!safePath) {
@@ -181,6 +334,17 @@ export function createRemoteRelay({
         status: 400,
         body: JSON.stringify({ error: 'Invalid relay request path.' }),
       });
+      return;
+    }
+    if (safePath === '/api/e2ee' || safePath === '/api/e2ee/session' || safePath === '/api/e2ee/pair') {
+      await answerEncryptedRelayRequest(message, safePath);
+      return;
+    }
+    if (!allowLegacy) {
+      sendRequestResponse(message.requestId, 401, JSON.stringify({
+        error: 'This saved pairing must be upgraded to end-to-end encryption.',
+        code: 'E2EE_REQUIRED',
+      }));
       return;
     }
     const method = ['GET', 'POST', 'OPTIONS'].includes(message.method) ? message.method : 'GET';
@@ -221,6 +385,10 @@ export function createRemoteRelay({
     }
     if (message.type === 'request') void answerRelayRequest(message);
     if (message.type === 'phone-auth') void answerPhoneAuthentication(message);
+    if (message.type === 'phone-disconnected') {
+      legacyPhones.delete(message.phoneId);
+      encryptedPhones.delete(message.phoneId);
+    }
   };
 
   const scheduleReconnect = () => {
@@ -270,6 +438,8 @@ export function createRemoteRelay({
         if (heartbeatTimer) clearInterval(heartbeatTimer);
         heartbeatTimer = null;
         closeLocalEvents();
+        legacyPhones.clear();
+        encryptedPhones.clear();
         if (closed) return;
         publish({
           status: 'offline',
@@ -306,6 +476,8 @@ export function createRemoteRelay({
       reconnectTimer = null;
       heartbeatTimer = null;
       closeLocalEvents();
+      legacyPhones.clear();
+      encryptedPhones.clear();
       const active = relaySocket;
       relaySocket = null;
       if (active && active.readyState < WebSocketImpl.CLOSING) active.close(1000, 'Bridge shutting down');

@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
 import {
   DEFAULT_RELAY_URL,
+  deletePersistentRelayRoom,
   normalizeRelayOrigin,
   persistentRelayIdentity,
   relayDeviceUrl,
@@ -29,6 +30,27 @@ test('the Mac relay identity persists with owner-only permissions', async () => 
   const identityPath = path.join(stateDir, 'relay-device.json');
   assert.equal((await stat(identityPath)).mode & 0o777, 0o600);
   assert.doesNotMatch(await readFile(identityPath, 'utf8'), /access-token/);
+});
+
+test('purging a Mac authenticates and deletes its durable relay room', async () => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), 'microdex-relay-delete-'));
+  const identity = await persistentRelayIdentity(stateDir);
+  let request = null;
+  try {
+    const removed = await deletePersistentRelayRoom({
+      stateDir,
+      fetchImpl: async (url, options) => {
+        request = { url, options };
+        return new Response('{"ok":true}', { status: 200 });
+      },
+    });
+    assert.equal(removed, true);
+    assert.equal(request.options.method, 'DELETE');
+    assert.equal(request.options.headers['X-Microdex-Device-Secret'], identity.deviceSecret);
+    assert.match(request.url, new RegExp(`/v1/devices/${identity.deviceId}/reset$`));
+  } finally {
+    await rm(stateDir, { recursive: true, force: true });
+  }
 });
 
 test('stable HTTP and WebSocket routes point to the same Mac room', () => {
