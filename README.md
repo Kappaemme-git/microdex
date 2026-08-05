@@ -71,7 +71,7 @@ automatically when you log into the Mac. The saved pairing reconnects whenever
 the Mac is awake and online, even if the phone switches between Wi-Fi and
 mobile data.
 
-Before pairing, **Explore demo** opens a completely local walkthrough with fictional
+Before pairing, **Explore without a Mac** opens a completely local walkthrough with fictional
 tasks. It never contacts a Mac, Cloudflare, Codex, or OpenAI. The real pairing
 flow asks the user to review and accept the data-processing explanation before
 any command or message can leave the phone.
@@ -124,7 +124,7 @@ Use `microdex native status`, `microdex native test`, or
 
 ## App Review access
 
-The native **Explore demo** path lets a reviewer exercise the interface immediately
+The native **Explore without a Mac** path lets a reviewer exercise the interface immediately
 without credentials or external hardware. To let App Review verify the full
 Mac-to-phone path, prepare a dedicated clean review Mac and run:
 
@@ -225,8 +225,8 @@ desktop channel, so a third-party app cannot attach to an already in-flight turn
 owned by a different desktop process. Select the task in Microdex before sending
 new work to keep subsequent status and approvals live.
 
-Expo Go is a development preview. Public distribution will require signed EAS
-builds and TestFlight.
+Expo Go is used only for development previews. Public versions are distributed
+as signed EAS builds through TestFlight and the App Store.
 
 ---
 

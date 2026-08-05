@@ -1,7 +1,7 @@
 # Microdex App Review runbook
 
 Use this for every App Store submission that Apple may test against a real Mac.
-The app's **Explore demo** path is the immediate no-login walkthrough, but it does
+The app's **Explore without a Mac** path is the immediate no-login walkthrough, but it does
 not replace live reviewer access unless Apple has approved demo-only review in
 advance.
 
@@ -35,7 +35,7 @@ third-party keycap artwork shown in the app.
 
 Suggested review instructions:
 
-1. Open Microdex and tap **Explore demo** to inspect every control without a Mac.
+1. Open Microdex and tap **Explore without a Mac** to inspect every control without a Mac.
 2. To verify live control, exit the demo, tap **Pair Mac**, review the data-flow
    notice, tap **Continue**, then scan the private QR attached to the review.
 3. Select a fictional task and use Fast Mode, reasoning, chat, and Voice Chat.

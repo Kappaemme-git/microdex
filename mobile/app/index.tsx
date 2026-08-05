@@ -118,15 +118,15 @@ const STORAGE_LEGACY_PROGRAMMED_KEYS = 'microdex.programmable.keys.v1';
 const STORAGE_ENCODER_MODE = 'microdex.encoder.mode.v1';
 const STORAGE_AI_CONSENT = 'microdex.ai-data-consent.v1';
 const AI_CONSENT_VERSION = '2026-08-05';
-const PROJECT_BRANCH_URL =
-  'https://github.com/Kappaemme-git/microdex/tree/codex/voice-mode-official-icons';
+const PROJECT_URL = 'https://github.com/Kappaemme-git/microdex';
 const PRIVACY_URL =
-  'https://github.com/Kappaemme-git/microdex/blob/codex/voice-mode-official-icons/PRIVACY.md';
-const SUPPORT_URL = 'https://github.com/Kappaemme-git/microdex/issues';
+  'https://github.com/Kappaemme-git/microdex/blob/main/PRIVACY.md';
+const SUPPORT_URL =
+  'https://github.com/Kappaemme-git/microdex/blob/main/SUPPORT.md';
 const LICENSE_URL =
-  'https://github.com/Kappaemme-git/microdex/blob/codex/voice-mode-official-icons/LICENSE';
+  'https://github.com/Kappaemme-git/microdex/blob/main/LICENSE';
 const THIRD_PARTY_LICENSE_URL =
-  'https://github.com/Kappaemme-git/microdex/blob/codex/voice-mode-official-icons/bridge/native-shim/THIRD_PARTY_LICENSE.txt';
+  'https://github.com/Kappaemme-git/microdex/blob/main/bridge/native-shim/THIRD_PARTY_LICENSE.txt';
 const EXPO_BRIDGE_TOKEN = __DEV__
   ? process.env.EXPO_PUBLIC_MICRODEX_TOKEN?.trim() ?? ''
   : '';
@@ -1022,7 +1022,7 @@ export default function ControllerScreen() {
     setSettingsVisible(false);
     setScannerVisible(false);
     setInfoSheet(null);
-    announce('Local demo active. Every task and command here is fictional.');
+    announce('Offline preview active. Every task and command here is fictional.');
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [announce]);
 
@@ -1034,7 +1034,7 @@ export default function ControllerScreen() {
     setLiveChannel('offline');
     setSettingsVisible(false);
     setInfoSheet(null);
-    announce('Demo closed. Pair your Mac to control the real Codex app.');
+    announce('Offline preview closed. Pair your Mac to control the real Codex app.');
     await Haptics.selectionAsync();
   }, [announce]);
 
@@ -2384,7 +2384,7 @@ export default function ControllerScreen() {
                       <View style={styles.gateStepCopy}>
                         <Text style={styles.gateStepTitle}>Play with the keyboard</Text>
                         <Text style={styles.gateStepBody}>
-                          Twelve keys, a joystick and a dial control your Mac. Or explore the demo first.
+                          Twelve keys, a joystick and a dial control your Mac. Or explore everything without a Mac first.
                         </Text>
 
                         <View style={styles.gateKeyPreview}>
@@ -2415,14 +2415,14 @@ export default function ControllerScreen() {
 
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Explore Microdex demo without a Mac"
+                    accessibilityLabel="Explore Microdex without a Mac"
                     onPress={() => void enterDemo()}
                     style={({ pressed }) => [
                       styles.gateDemoButton,
                       pressed && styles.gateButtonPressed,
                     ]}>
                     <MaterialCommunityIcons name="play-outline" size={15} color={theme.textMuted} />
-                    <Text style={styles.gateDemoButtonText}>Explore demo</Text>
+                    <Text style={styles.gateDemoButtonText}>Explore without a Mac</Text>
                   </Pressable>
 
                   <Text style={styles.gateFootnote}>
@@ -3446,9 +3446,9 @@ export default function ControllerScreen() {
               </View>
 
               <View style={styles.settingsGroup}>
-                <Text style={styles.settingsGroupLabel}>Review & Demo</Text>
+                <Text style={styles.settingsGroupLabel}>Offline Experience</Text>
                 <Text style={styles.settingsSupportingText}>
-                  Demo runs entirely on this device with fictional tasks. It never contacts a Mac, Cloudflare or OpenAI.
+                  The offline preview runs entirely on this device with fictional tasks. It never contacts a Mac, Cloudflare or OpenAI.
                 </Text>
                 <Pressable
                   accessibilityRole="button"
@@ -3458,7 +3458,7 @@ export default function ControllerScreen() {
                     pressed && styles.settingsLinkRowPressed,
                   ]}>
                   <Text style={styles.settingsLinkTitle}>
-                    {demoMode ? 'Exit local demo' : 'Try local demo'}
+                    {demoMode ? 'Exit offline preview' : 'Explore without a Mac'}
                   </Text>
                   <MaterialCommunityIcons
                     name={demoMode ? 'exit-to-app' : 'play-outline'}
@@ -3771,11 +3771,11 @@ export default function ControllerScreen() {
                       Microdex is an independent open-source companion. It is not affiliated with or endorsed by OpenAI or Work Louder. Codex access is not included and every real action executes on a user-owned Mac.
                     </Text>
                     <Text style={styles.infoVersion}>
-                      APP {appInfo.version} ({appInfo.buildNumber}) · {demoMode ? 'LOCAL DEMO' : `BRIDGE ${status?.bridge?.version ?? 'OFFLINE'}`}
+                      APP {appInfo.version} ({appInfo.buildNumber}) · {demoMode ? 'OFFLINE PREVIEW' : `BRIDGE ${status?.bridge?.version ?? 'OFFLINE'}`}
                     </Text>
                     <Pressable
                       accessibilityRole="link"
-                      onPress={() => void openExternal(PROJECT_BRANCH_URL, 'Microdex repository')}
+                      onPress={() => void openExternal(PROJECT_URL, 'Microdex repository')}
                       style={({ pressed }) => [styles.infoAction, pressed && styles.gateButtonPressed]}>
                       <Text style={styles.infoActionText}>OPEN SOURCE REPOSITORY</Text>
                       <CentralIcon name="link" size={17} color={theme.bg} />

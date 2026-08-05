@@ -18,13 +18,17 @@ const privacyPolicy = await readFile(
   new URL('../../PRIVACY.md', import.meta.url),
   'utf8',
 );
+const supportPolicy = await readFile(
+  new URL('../../SUPPORT.md', import.meta.url),
+  'utf8',
+);
 const reviewRunbook = await readFile(
   new URL('../../docs/APP_REVIEW_RUNBOOK.md', import.meta.url),
   'utf8',
 );
 
 test('App Review can open a local demo containing only fictional tasks', () => {
-  assert.match(controllerSource, /Explore demo/);
+  assert.match(controllerSource, /Explore without a Mac/);
   assert.match(controllerSource, /enterDemo/);
   assert.doesNotMatch(controllerSource, /gateBrandBar/);
   assert.match(controllerSource, /<Text style=\{styles\.gateTitle\}>Control Codex<\/Text>/);
@@ -53,6 +57,15 @@ test('Settings exposes privacy, support, licenses, about, and app version', () =
   }
   assert.match(controllerSource, /appInfo\.version/);
   assert.match(controllerSource, /appInfo\.buildNumber/);
+});
+
+test('public policy and support links use stable main-branch URLs', () => {
+  assert.match(controllerSource, /microdex\/blob\/main\/PRIVACY\.md/);
+  assert.match(controllerSource, /microdex\/blob\/main\/SUPPORT\.md/);
+  assert.doesNotMatch(controllerSource, /codex\/voice-mode-official-icons/);
+  assert.match(supportPolicy, /issues\/new/);
+  assert.match(supportPolicy, /security\/advisories\/new/);
+  assert.match(privacyPolicy, /blob\/main\/SUPPORT\.md/);
 });
 
 test('the release uses an original Microdex icon and independent positioning', () => {

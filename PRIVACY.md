@@ -2,7 +2,8 @@
 
 Effective date: August 4, 2026
 
-Microdex is an independent, open-source mobile companion for a Codex runtime
+Microdex is maintained by the Microdex open-source project and is an independent,
+open-source mobile companion for a Codex runtime
 running on your own Mac. Microdex does not require a Microdex account and does
 not include advertising, third-party tracking, or product analytics.
 
@@ -66,8 +67,9 @@ durable relay room.
 
 ## Contact and changes
 
-Questions or privacy requests can be opened in the public Microdex repository:
-https://github.com/Kappaemme-git/microdex/issues
+Support requests, privacy questions, and deletion requests can be submitted
+through the public support channels listed here:
+https://github.com/Kappaemme-git/microdex/blob/main/SUPPORT.md
 
 Material changes to this policy will be published in the repository with an
 updated effective date.

@@ -1,6 +1,6 @@
 {
   "name": "microdex-cli",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "Local Mac bridge and pairing CLI for Microdex on iPhone.",
   "private": false,
   "type": "module",
@@ -17,6 +17,7 @@
     "bridge/server.mjs",
     "docs/APP_STORE_RELEASE.md",
     "PRIVACY.md",
+    "SUPPORT.md",
     "README.md"
   ],
   "publishConfig": {
