@@ -21,6 +21,10 @@ const glyphSource = await readFile(
   new URL('../../mobile/components/codex-micro-glyph.tsx', import.meta.url),
   'utf8',
 );
+const officialGlyphSource = await readFile(
+  new URL('../../mobile/lib/official-codex-micro-glyphs.ts', import.meta.url),
+  'utf8',
+);
 
 /** Entries in catalog order, which is also the order shown in the grid. */
 function catalogEntries() {
@@ -74,14 +78,24 @@ test('every keycap has a readable name and an icon', () => {
   }
 });
 
-test('every printed keycap has a custom Codex Micro vector glyph', () => {
-  const cases = [...glyphSource.matchAll(/case '([^']+)':/g)].map((match) => match[1]);
-  assert.equal(new Set(cases).size, cases.length, 'no duplicate glyph case');
-  assert.deepEqual(
-    [...cases].sort(),
-    [...CODEX_KEYCAP_IDS].sort(),
-    'the custom vector set must cover every physical keycap',
+test('every printed keycap is mapped to official Codex Micro artwork', () => {
+  const mapping = officialGlyphSource.slice(
+    officialGlyphSource.indexOf('export const OFFICIAL_CODEX_MICRO_KEYCAP_LEGENDS'),
   );
+  const mappedIds = [
+    ...mapping.matchAll(
+      /^\s*(?:["']([^"']+)["']|([A-Z][A-Z0-9+-]*)):\s*["'][^"']+["'],?$/gm,
+    ),
+  ].map((match) => match[1] ?? match[2]);
+
+  assert.equal(new Set(mappedIds).size, mappedIds.length, 'no duplicate keycap mapping');
+  assert.deepEqual(
+    [...mappedIds].sort(),
+    [...CODEX_KEYCAP_IDS].sort(),
+    'the official vector set must cover every physical keycap',
+  );
+  assert.match(glyphSource, /OFFICIAL_CODEX_MICRO_KEYCAP_LEGENDS\[keycapId\]/);
+  assert.match(glyphSource, /OFFICIAL_CODEX_MICRO_GLYPHS\[legend\]/);
 });
 
 test('Send uses the CODEX keycap rather than the decorative OpenAI cap', () => {
@@ -112,36 +126,36 @@ test('keycaps only reference commands the bridge can run', () => {
 test('the keys on the deck carry no printed name', () => {
   // Icon only, like the physical caps. A name on a key that small was noise.
   assert.doesNotMatch(controllerSource, /caption=\{/);
-  // The command still has to be announced to screen readers.
-  assert.match(controllerSource, /\$\{action\.label\}, \$\{programmed\?\.keycapId\} keycap/);
+  // The command and its position still have to be announced to screen readers.
+  assert.match(
+    controllerSource,
+    /\$\{action\.label\}, key \$\{slotIndex \+ 1\}, active chat only/,
+  );
   assert.ok(hardwareKeySource.includes('caption?: string;'), 'caption stays available');
 });
 
-test('the visible Micro controls use traced vectors instead of icon-font approximations', () => {
+test('the visible Micro controls use official vectors instead of icon-font approximations', () => {
   for (const keycapId of ['FAST', 'APPR', 'REJ', 'SPLIT', 'MIC', 'CODEX']) {
     assert.match(
       controllerSource,
       new RegExp(`CodexMicroGlyph keycapId="${keycapId}"`),
-      `${keycapId} should use its custom vector`,
+      `${keycapId} should use its official vector`,
     );
   }
-  assert.match(controllerSource, /CodexMicroGlyph keycapId=\{programmed\.keycapId\}/);
+  assert.match(
+    controllerSource,
+    /CodexCommandGlyph actionId=\{actionId\} size=\{24\} color=\{skeuo\.icon\}/,
+  );
   assert.match(controllerSource, /CodexMicroActionGlyph/);
 });
 
-test('the keycap always follows the chosen command', () => {
-  assert.match(controllerSource, /setChosenKeycapId\(suggested \?\? 'EMPT1'\)/);
-  // No hand-picked cap any more, so nothing may suppress the suggestion.
-  assert.doesNotMatch(controllerSource, /keycapTouched/);
-});
-
-test('the editor is only the command list', () => {
-  // The cap grid is gone: a cap is decoration, and picking it separately only
-  // produced keys whose label contradicted their command.
+test('the editor shows one scrolling command catalog and keeps keycap metadata internal', () => {
   assert.doesNotMatch(controllerSource, /styles\.keycapGrid/);
   assert.doesNotMatch(controllerSource, /styles\.keycapChip/);
   assert.doesNotMatch(controllerSource, /KEYCAP LABEL/);
-  // The catalog stays the single source of the mapping.
+  assert.doesNotMatch(controllerSource, /KEYCAP_CATALOG\.map/);
+  assert.match(controllerSource, /placeholder="Search all Codex functions"/);
+  assert.match(controllerSource, /filteredActions\.map/);
   assert.match(controllerSource, /suggestedKeycapForCommand/);
   assert.match(controllerSource, /contentContainerStyle=\{styles\.actionCatalog\}/);
 });

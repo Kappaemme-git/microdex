@@ -54,7 +54,38 @@ export const DEFAULT_KEYCAP_COMMANDS = Object.freeze({
   APPR: 'approval.approve',
   REJ: 'approval.decline',
   SPLIT: 'forkThread',
+  MIC: 'composer.startDictation',
   CODEX: 'composer.submit',
+  BUG: 'app.sendFeedback',
+  OAI: 'app.openDocumentation',
+  TERM: 'workspace.toggleTerminal',
+  DWN: 'thread.copyMarkdown',
+  DEL: 'chat.archive',
+  NEW: 'chat.new',
+  NAV: 'workspace.openBrowser',
+  MAGIC: 'workspace.togglePinnedSummary',
+  DIFF: 'workspace.toggleReviewPanel',
+  PLAY: 'workspace.runEnvironment',
+  GIT: 'git.commit',
+  BRCH: 'git.createDraftPullRequest',
+  BRANCH: 'git.createBranch',
+  MRG: 'git.mergePullRequest',
+  PR: 'git.createPullRequest',
+  PAINT: 'composer.attachFiles',
+  LAB: 'app.openSettings',
+  PARTY: 'workspace.openSideChat',
+  TIME: 'workspace.scheduled',
+  'MIND+': 'composer.increaseReasoningEffort',
+  'MIND-': 'composer.decreaseReasoningEffort',
+  SETUP: 'app.openSettings',
+  FOLD: 'app.openFolder',
+  UPL: 'composer.attachFiles',
+  APPS: 'workspace.openSkills',
+});
+
+export const DEFAULT_KEYCAP_PROMPTS = Object.freeze({
+  YOLO: ':yolo:',
+  YEET: ':yeet:',
 });
 
 const BASE_PROGRAMMABLE_ACTIONS = [
@@ -235,6 +266,97 @@ const BASE_PROGRAMMABLE_ACTIONS = [
     label: 'Continue in worktree',
     kind: 'desktop',
     desktopAction: 'worktree',
+  },
+  {
+    id: 'workspace.openBrowser',
+    label: 'Browser',
+    kind: 'desktop',
+    desktopAction: 'menu-item',
+    desktopPayload: 'Browser',
+  },
+  {
+    id: 'workspace.openSkills',
+    label: 'Skills',
+    kind: 'desktop',
+    desktopAction: 'command-menu-search',
+    desktopPayload: 'Skills',
+  },
+  {
+    id: 'workspace.openSideChat',
+    label: 'Side chat',
+    kind: 'desktop',
+    desktopAction: 'command-menu-search',
+    desktopPayload: 'Side chat',
+  },
+  {
+    id: 'workspace.runEnvironment',
+    label: 'Run environment',
+    kind: 'desktop',
+    desktopAction: 'command-menu-search',
+    desktopPayload: 'Run',
+  },
+  {
+    id: 'app.openSettings',
+    label: 'Settings',
+    kind: 'desktop',
+    desktopAction: 'menu-item',
+    desktopPayload: 'Settings…',
+  },
+  {
+    id: 'app.openDocumentation',
+    label: 'Documentation',
+    kind: 'desktop',
+    desktopAction: 'open-url',
+    desktopPayload: 'https://developers.openai.com',
+  },
+  {
+    id: 'app.sendFeedback',
+    label: 'Send feedback',
+    kind: 'desktop',
+    desktopAction: 'menu-item',
+    desktopPayload: 'Send Feedback',
+  },
+  {
+    id: 'app.openFolder',
+    label: 'Open folder',
+    kind: 'desktop',
+    desktopAction: 'menu-item',
+    desktopPayload: 'Open Folder…',
+  },
+  {
+    id: 'git.commit',
+    label: 'Git commit',
+    kind: 'desktop',
+    desktopAction: 'command-menu-search',
+    desktopPayload: 'Commit',
+  },
+  {
+    id: 'git.createBranch',
+    label: 'Create branch',
+    kind: 'desktop',
+    desktopAction: 'command-menu-search',
+    desktopPayload: 'Create branch',
+  },
+  {
+    id: 'git.createDraftPullRequest',
+    label: 'Draft pull request',
+    kind: 'desktop',
+    desktopAction: 'command-menu-search',
+    desktopPayload: 'Draft pull request',
+  },
+  {
+    id: 'git.createPullRequest',
+    label: 'Create pull request',
+    kind: 'desktop',
+    desktopAction: 'command-menu-search',
+    desktopPayload: 'Create pull request',
+  },
+  {
+    id: 'git.mergePullRequest',
+    label: 'Merge pull request',
+    kind: 'desktop',
+    desktopAction: 'command-menu-search',
+    desktopPayload: 'Merge pull request',
   },
   {
     id: 'microdex.insertPrompt',
@@ -472,7 +594,7 @@ export async function executeProgrammedAction({
       })).state;
     }
     case 'desktop':
-      await executeDesktop(action.desktopAction);
+      await executeDesktop(action.desktopAction, action.desktopPayload);
       return codex.state();
     case 'custom': {
       const text = String(customText || '').trim();

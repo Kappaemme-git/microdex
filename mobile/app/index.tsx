@@ -33,18 +33,16 @@ import { runOnJS } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import ChatDrawer, { type ChatDrawerHandle } from '@/components/chat-drawer';
+import { CentralIcon, type CentralIconName } from '@/components/central-icon';
+import { CodexCommandGlyph } from '@/components/codex-command-glyph';
 import {
   CodexMicroActionGlyph,
   CodexMicroGlyph,
+  CodexVoiceGlyph,
 } from '@/components/codex-micro-glyph';
 import { DeckLighting, type MicLight } from '@/components/deck-lighting';
 import { HardwareKey } from '@/components/hardware-key';
 import { Joystick } from '@/components/joystick';
-import {
-  CodexSymbol,
-  ExpandSymbol,
-  LightningSymbol,
-} from '@/components/key-symbols';
 import { ReasoningDial } from '@/components/reasoning-dial';
 import { DismissibleSheet, SheetHandlePill } from '@/components/sheet-dismiss-handle';
 import { RaisedShell, Screw, ShellPool, getSkeuo, useSkeuo } from '@/components/skeuo';
@@ -53,13 +51,26 @@ import {
   QueuedMessage,
   RemoteState,
   ReasoningEffort,
+  bridgeEventAuthentication,
   bridgeEventsUrl,
-  bridgeRequest,
+  bridgeRequest as realBridgeRequest,
   inferBridgeUrl,
   isBridgeAuthError,
   isBridgeConnectionError,
   mobileAppInfo,
+  openBridgeEvent,
+  registerBridgeEncryption,
+  resetEncryptedBridgeSession,
 } from '@/lib/bridge';
+import {
+  createDemoRemoteState,
+  createDemoStatus,
+  respondToDemoRequest,
+} from '@/lib/demo';
+import {
+  type E2EEKeyMaterial,
+  normalizeE2EEKeyMaterial,
+} from '@/lib/e2ee-core';
 import { Fonts } from '@/lib/fonts';
 import { suggestedKeycapForCommand } from '@/lib/keycap-catalog';
 import {
@@ -83,27 +94,46 @@ import { claimPairingPayload, parsePairingUrl } from '@/lib/pairing';
 import type { AgentStatusKey } from '@/lib/theme';
 import { LED, LED_RECORDING, statusTone, ThemePalette, useTheme } from '@/lib/theme';
 
-const STATUS_ICON: Partial<Record<AgentStatusKey, MicroActionIcon>> = {
-  complete: 'check-circle',
-  waiting: 'alert-circle-outline',
-  error: 'alert-octagon-outline',
+const STATUS_ICON: Partial<Record<AgentStatusKey, CentralIconName>> = {
+  complete: 'successCircle',
+  waiting: 'alert',
+  error: 'alert',
 };
 
 type JoystickDirection = 'up' | 'right' | 'down' | 'left';
 type EncoderMode = 'reasoning' | 'composer-navigation' | 'conversation-scroll';
+type InfoSheet = 'about' | 'privacy' | 'support' | 'licenses';
+type ConsentContinuation = 'scanner' | 'pairing' | null;
+type BridgeRequestOptions = {
+  method?: 'GET' | 'POST';
+  body?: Record<string, unknown>;
+};
 type Styles = ReturnType<typeof createStyles>;
 
 const STORAGE_URL = 'microdex.bridge.url';
 const STORAGE_TOKEN = 'microdex.bridge.token';
+const STORAGE_E2EE = 'microdex.bridge.e2ee.v1';
 const STORAGE_PROGRAMMED_KEYS = 'microdex.programmable.keys.v2';
 const STORAGE_LEGACY_PROGRAMMED_KEYS = 'microdex.programmable.keys.v1';
 const STORAGE_ENCODER_MODE = 'microdex.encoder.mode.v1';
+const STORAGE_AI_CONSENT = 'microdex.ai-data-consent.v1';
+const AI_CONSENT_VERSION = '2026-08-05';
+const PROJECT_URL = 'https://github.com/Kappaemme-git/microdex';
+const PRIVACY_URL =
+  'https://github.com/Kappaemme-git/microdex/blob/main/PRIVACY.md';
+const SUPPORT_URL =
+  'https://github.com/Kappaemme-git/microdex/blob/main/SUPPORT.md';
+const LICENSE_URL =
+  'https://github.com/Kappaemme-git/microdex/blob/main/LICENSE';
+const THIRD_PARTY_LICENSE_URL =
+  'https://github.com/Kappaemme-git/microdex/blob/main/bridge/native-shim/THIRD_PARTY_LICENSE.txt';
 const EXPO_BRIDGE_TOKEN = __DEV__
   ? process.env.EXPO_PUBLIC_MICRODEX_TOKEN?.trim() ?? ''
   : '';
 const FALLBACK_EFFORTS: ReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
 const COMPLETE_LIGHT_MS = 1_200;
 const KEY_RESULT_LIGHT_MS = 900;
+const LED_VOICE = '#8EA8FF';
 const ACTION_PROGRESS: Record<string, string> = {
   fast: 'Updating Fast Mode',
   reasoning: 'Updating reasoning',
@@ -113,6 +143,7 @@ const ACTION_PROGRESS: Record<string, string> = {
   decline: 'Declining request',
   fork: 'Creating fork',
   dictation: 'Opening dictation',
+  voice: 'Controlling Voice Chat',
   plan: 'Changing mode',
   forward: 'Moving forward',
   sidebar: 'Toggling sidebar',
@@ -122,79 +153,11 @@ const VISUAL_PREVIEW =
   __DEV__ &&
   Platform.OS === 'web' &&
   new URLSearchParams(globalThis.location?.search ?? '').get('preview') === '1';
-const VISUAL_PREVIEW_REMOTE: RemoteState = {
-  online: true,
-  selectedThreadId: 'preview-thinking',
-  selected: {
-    id: 'preview-thinking',
-    name: 'Build Microdex lighting',
-    task: 'Faithful Codex Micro controller',
-    project: 'Microdex',
-    status: 'thinking',
-    updatedAt: Date.now(),
-    fastMode: true,
-    reasoningEffort: 'high',
-    supportedReasoningEfforts: FALLBACK_EFFORTS,
-  },
-  threads: [
-    {
-      id: 'preview-thinking',
-      name: 'Build Microdex lighting',
-      task: 'Faithful Codex Micro controller',
-      project: 'Microdex',
-      status: 'thinking',
-      updatedAt: Date.now(),
-      fastMode: true,
-      reasoningEffort: 'high',
-      supportedReasoningEfforts: FALLBACK_EFFORTS,
-    },
-    {
-      id: 'preview-complete',
-      name: 'Pairing CLI',
-      task: 'Test pairing',
-      project: 'Microdex',
-      status: 'complete',
-      updatedAt: Date.now() - 1_000,
-      fastMode: false,
-      reasoningEffort: 'medium',
-      supportedReasoningEfforts: FALLBACK_EFFORTS,
-    },
-    {
-      id: 'preview-waiting',
-      name: 'TestFlight',
-      task: 'Needs confirmation',
-      project: 'Microdex',
-      status: 'waiting',
-      updatedAt: Date.now() - 2_000,
-      fastMode: false,
-      reasoningEffort: 'medium',
-      supportedReasoningEfforts: FALLBACK_EFFORTS,
-    },
-  ],
-  messageQueue: [],
-  pendingApproval: null,
-  actionAvailability: {},
-};
-const VISUAL_PREVIEW_STATUS: BridgeStatus = {
-  connected: true,
-  bridge: { name: 'Microdex Preview', version: 'dev', protocolVersion: 2 },
-  capabilities: {
-    verifiedSettings: true,
-    remoteChat: true,
-    taskControl: true,
-    programmableActions: MICRO_ACTIONS.length,
-    programmableAssignments: true,
-    encoderModes: true,
-    desktopAutomation: true,
-    actionAvailability: true,
-    visibleDesktopRouting: true,
-  },
-  fastMode: true,
-  reasoningEffort: 'high',
-  configPath: 'preview',
-  platform: 'web',
-  remote: VISUAL_PREVIEW_REMOTE,
-};
+const VISUAL_PREVIEW_REMOTE = createDemoRemoteState();
+const VISUAL_PREVIEW_STATUS = createDemoStatus(
+  VISUAL_PREVIEW_REMOTE,
+  MICRO_ACTIONS.length,
+);
 
 function readableError(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong.';
@@ -274,14 +237,63 @@ function GuideItem({
   );
 }
 
+function MicrodexMark({ size = 24 }: { size?: number }) {
+  const padding = size * 0.18;
+  const gap = size * 0.075;
+  const keyWidth = (size - (padding * 2) - gap) / 2;
+  const keyHeight = (size - (padding * 2) - (gap * 2)) / 3;
+
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size * 0.28,
+        backgroundColor: '#0A0A0A',
+        padding,
+      }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}>
+        {Array.from({ length: 6 }, (_, index) => (
+          <View
+            key={index}
+            style={{
+              width: keyWidth,
+              height: keyHeight,
+              borderRadius: Math.max(1, size * 0.045),
+              backgroundColor: '#F7F7F3',
+              opacity: index === 5 ? 0.82 : 1,
+            }}
+          />
+        ))}
+      </View>
+      <View
+        style={{
+          position: 'absolute',
+          right: size * 0.095,
+          bottom: size * 0.17,
+          width: size * 0.37,
+          height: Math.max(1, size * 0.055),
+          borderRadius: size,
+          backgroundColor: '#F7F7F3',
+          transform: [{ rotate: '-43deg' }],
+        }}
+      />
+    </View>
+  );
+}
+
 export default function ControllerScreen() {
   const { theme, mode, setMode } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const skeuo = useSkeuo();
   const statusMeta = useMemo(() => statusTone(theme), [theme]);
   const insets = useSafeAreaInsets();
+  const [demoMode, setDemoMode] = useState(VISUAL_PREVIEW);
   const [bridgeUrl, setBridgeUrl] = useState(inferBridgeUrl());
   const [token, setToken] = useState(EXPO_BRIDGE_TOKEN);
+  const [e2ee, setE2ee] = useState<E2EEKeyMaterial | null>(null);
   const [status, setStatus] = useState<BridgeStatus | null>(
     VISUAL_PREVIEW ? VISUAL_PREVIEW_STATUS : null,
   );
@@ -299,6 +311,11 @@ export default function ControllerScreen() {
   const liveStatusPulse = useRef(new Animated.Value(0.62)).current;
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [scannerVisible, setScannerVisible] = useState(false);
+  const [consentVisible, setConsentVisible] = useState(false);
+  const [consentContinuation, setConsentContinuation] =
+    useState<ConsentContinuation>(null);
+  const [aiConsent, setAiConsent] = useState(VISUAL_PREVIEW);
+  const [infoSheet, setInfoSheet] = useState<InfoSheet | null>(null);
   const [commandCopied, setCommandCopied] = useState(false);
   const commandCopiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -313,13 +330,6 @@ export default function ControllerScreen() {
   const [editingSlot, setEditingSlot] = useState<number | null>(null);
   const [actionSearch, setActionSearch] = useState('');
   const [chosenActionId, setChosenActionId] = useState<string | null>(null);
-  /**
-   * The cap saved with the key. It is derived from the chosen command rather
-   * than picked by hand: the editor no longer shows a cap grid, since the cap
-   * is decoration and choosing it separately only produced keys whose label
-   * contradicted their command.
-   */
-  const [chosenKeycapId, setChosenKeycapId] = useState<MicroKeycapId>('EMPT1');
   const [customPrompt, setCustomPrompt] = useState('');
   const [encoderMode, setEncoderMode] = useState<EncoderMode>('reasoning');
   const [guideVisible, setGuideVisible] = useState(false);
@@ -340,12 +350,22 @@ export default function ControllerScreen() {
   const reconnectAttempt = useRef(0);
   const connectionInFlight = useRef(false);
   const pairingInFlight = useRef(false);
+  const pendingPairingCode = useRef<string | null>(null);
+  const aiConsentRef = useRef(VISUAL_PREVIEW);
+  const remoteRef = useRef<RemoteState | null>(
+    VISUAL_PREVIEW ? VISUAL_PREVIEW_REMOTE : null,
+  );
   /** Pairing link already attempted, so an incoming link is claimed once only. */
   const handledPairingUrl = useRef<string | null>(null);
   /** Set when the Mac rejected the saved credential, which stops the retry loop. */
   const credentialRejected = useRef(false);
   const incomingUrl = Linking.useLinkingURL();
   const networkState = Network.useNetworkState();
+  const appInfo = useMemo(() => mobileAppInfo(), []);
+
+  useEffect(() => {
+    remoteRef.current = remote;
+  }, [remote]);
 
   const activeAgent = remote?.selected ?? {
     id: '0', name: 'No task selected', task: 'Connect to Codex App Server', status: 'idle' as const,
@@ -357,6 +377,9 @@ export default function ControllerScreen() {
   const activeThreadIndex = remote?.threads.findIndex(
     (thread) => thread.id === activeThread?.id,
   ) ?? -1;
+  const voiceState = remote?.voice?.state ?? 'inactive';
+  const voiceActive = voiceState === 'active';
+  const voiceMuted = remote?.voice?.muted ?? false;
   const supportedReasoningEfforts = activeThread?.supportedReasoningEfforts?.length
     ? activeThread.supportedReasoningEfforts
     : FALLBACK_EFFORTS;
@@ -427,6 +450,35 @@ export default function ControllerScreen() {
     setNoticeError(isError);
   }, []);
 
+  const bridgeRequest = useCallback(async <T,>(
+    candidateUrl: string,
+    candidateToken: string,
+    path: string,
+    options: BridgeRequestOptions = {},
+    candidateE2EE?: E2EEKeyMaterial | null,
+  ): Promise<T> => {
+    if (!demoMode) {
+      return realBridgeRequest<T>(
+        candidateUrl,
+        candidateToken,
+        path,
+        options,
+        candidateE2EE,
+      );
+    }
+
+    const current = remoteRef.current ?? createDemoRemoteState();
+    if (path === '/api/status') {
+      return createDemoStatus(current, MICRO_ACTIONS.length) as T;
+    }
+    if (path === '/api/remote/state') return current as T;
+
+    const result = respondToDemoRequest(current, path, options.body);
+    remoteRef.current = result.remote;
+    setRemote(result.remote);
+    return result.response as T;
+  }, [demoMode]);
+
   const tryOpenChatFromSwipe = useCallback(() => {
     if (!status) {
       setSettingsVisible(true);
@@ -468,19 +520,32 @@ export default function ControllerScreen() {
       const [
         savedUrl,
         savedToken,
+        savedE2EE,
         savedKeys,
         savedLegacyKeys,
         savedEncoderMode,
+        savedConsent,
       ] = await Promise.all([
         readStoredValue(STORAGE_URL),
         readStoredValue(STORAGE_TOKEN),
+        readStoredValue(STORAGE_E2EE),
         readStoredValue(STORAGE_PROGRAMMED_KEYS),
         readStoredValue(STORAGE_LEGACY_PROGRAMMED_KEYS),
         readStoredValue(STORAGE_ENCODER_MODE),
+        readStoredValue(STORAGE_AI_CONSENT),
       ]);
       if (savedUrl && !EXPO_BRIDGE_TOKEN) setBridgeUrl(savedUrl);
       if (EXPO_BRIDGE_TOKEN) setToken(EXPO_BRIDGE_TOKEN);
       else if (savedToken) setToken(savedToken);
+      if (savedUrl && savedE2EE && !EXPO_BRIDGE_TOKEN) {
+        try {
+          const encryption = normalizeE2EEKeyMaterial(JSON.parse(savedE2EE));
+          registerBridgeEncryption(savedUrl, encryption);
+          setE2ee(encryption);
+        } catch {
+          await deleteStoredValue(STORAGE_E2EE);
+        }
+      }
       const storedKeys = savedKeys ?? savedLegacyKeys;
       if (storedKeys) {
         const migratedKeys = parseProgrammedKeys(storedKeys);
@@ -499,6 +564,9 @@ export default function ControllerScreen() {
       ) {
         setEncoderMode(savedEncoderMode);
       }
+      const consentAccepted = savedConsent === AI_CONSENT_VERSION;
+      aiConsentRef.current = consentAccepted;
+      setAiConsent(consentAccepted);
       setCredentialsReady(true);
     })();
   }, []);
@@ -608,10 +676,14 @@ export default function ControllerScreen() {
       handleActionError(error);
       return false;
     }
-  }, [bridgeUrl, handleActionError, status, token]);
+  }, [bridgeRequest, bridgeUrl, handleActionError, status, token]);
 
   useEffect(() => {
-    if (VISUAL_PREVIEW) return;
+    if (demoMode) return;
+    if (!aiConsent) {
+      setLiveChannel('offline');
+      return;
+    }
     if (!status) {
       setLiveChannel('offline');
       return;
@@ -622,6 +694,7 @@ export default function ControllerScreen() {
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let fallbackTimer: ReturnType<typeof setInterval> | null = null;
     let retries = 0;
+    let eventSessionId: string | null = null;
 
     const startFallback = () => {
       if (fallbackTimer) return;
@@ -637,15 +710,35 @@ export default function ControllerScreen() {
       setLiveChannel('connecting');
       socket = new WebSocket(bridgeEventsUrl(bridgeUrl));
       socket.onopen = () => {
-        socket?.send(JSON.stringify({ type: 'auth', token }));
+        void (async () => {
+          try {
+            if (e2ee) {
+              const auth = await bridgeEventAuthentication(bridgeUrl, token, e2ee);
+              eventSessionId = auth.sessionId;
+              socket?.send(JSON.stringify(auth.message));
+            } else {
+              socket?.send(JSON.stringify({ type: 'auth', token }));
+            }
+          } catch (error) {
+            announce(readableError(error), true);
+            socket?.close();
+          }
+        })();
       };
       socket.onmessage = (event) => {
         try {
           const message = JSON.parse(String(event.data)) as {
-            type: 'ready' | 'state' | 'error';
+            type: 'ready' | 'state' | 'error' | 'e2ee';
             state?: RemoteState;
             message?: string;
+            envelope?: Parameters<typeof openBridgeEvent>[3];
           };
+          if (message.type === 'e2ee' && e2ee && eventSessionId && message.envelope) {
+            const decrypted = openBridgeEvent(bridgeUrl, e2ee, eventSessionId, message.envelope);
+            if (decrypted.type === 'state' && decrypted.state) setRemote(decrypted.state);
+            if (decrypted.type === 'error' && decrypted.message) announce(decrypted.message, true);
+            return;
+          }
           if (message.type === 'ready') {
             retries = 0;
             setLiveChannel('live');
@@ -662,6 +755,8 @@ export default function ControllerScreen() {
       socket.onerror = () => socket?.close();
       socket.onclose = () => {
         if (cancelled) return;
+        if (e2ee) resetEncryptedBridgeSession(bridgeUrl, e2ee);
+        eventSessionId = null;
         setLiveChannel('connecting');
         startFallback();
         retries += 1;
@@ -677,13 +772,22 @@ export default function ControllerScreen() {
       stopFallback();
       socket?.close();
     };
-  }, [announce, bridgeUrl, refreshRemote, status, token]);
+  }, [aiConsent, announce, bridgeUrl, demoMode, e2ee, refreshRemote, status, token]);
 
   const connectToBridge = useCallback(async (
     candidateUrl: string,
     candidateToken: string,
     interactive = false,
+    candidateE2EE: E2EEKeyMaterial | null = e2ee,
   ) => {
+    if (!demoMode && !aiConsentRef.current) {
+      if (interactive) {
+        setConsentContinuation(null);
+        setConsentVisible(true);
+        announce('Review and accept data processing before reconnecting.');
+      }
+      return false;
+    }
     if (!candidateUrl.trim() || !candidateToken.trim()) {
       if (interactive) announce('Enter the bridge address and access code.', true);
       return false;
@@ -693,24 +797,35 @@ export default function ControllerScreen() {
     setBridgeConnecting(true);
     if (interactive) setLoadingAction('connect');
     try {
+      registerBridgeEncryption(candidateUrl, candidateE2EE);
       const nextStatus = await bridgeRequest<BridgeStatus>(
         candidateUrl,
         candidateToken,
         '/api/status',
+        {},
+        candidateE2EE,
       );
       await Promise.all([
         writeStoredValue(STORAGE_URL, candidateUrl.trim()),
         writeStoredValue(STORAGE_TOKEN, candidateToken.trim()),
+        candidateE2EE
+          ? writeStoredValue(STORAGE_E2EE, JSON.stringify(candidateE2EE))
+          : deleteStoredValue(STORAGE_E2EE),
       ]);
       setBridgeUrl(candidateUrl.trim());
       setToken(candidateToken.trim());
+      setE2ee(candidateE2EE);
       setStatus(nextStatus);
       if (nextStatus.remote?.online) setRemote(nextStatus.remote as RemoteState);
       setSettingsVisible(false);
       setScannerVisible(false);
       reconnectAttempt.current = 0;
       credentialRejected.current = false;
-      announce('Bridge connected. The keys now control Codex.');
+      announce(
+        candidateUrl.trim().startsWith('https://')
+          ? 'Secure remote bridge connected. Microdex now works on Wi-Fi or mobile data.'
+          : 'Local bridge connected. The keys now control Codex.',
+      );
       if (interactive) {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
@@ -725,7 +840,10 @@ export default function ControllerScreen() {
         credentialRejected.current = true;
         announce(readableError(error), true);
         await deleteStoredValue(STORAGE_TOKEN);
+        await deleteStoredValue(STORAGE_E2EE);
+        registerBridgeEncryption(candidateUrl, null);
         setToken('');
+        setE2ee(null);
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         return false;
       }
@@ -739,9 +857,9 @@ export default function ControllerScreen() {
       setBridgeConnecting(false);
       if (interactive) setLoadingAction(null);
     }
-  }, [announce]);
+  }, [announce, bridgeRequest, demoMode, e2ee]);
 
-  const acceptPairingCode = useCallback(async (value: string) => {
+  const claimPairingCode = useCallback(async (value: string) => {
     if (pairingInFlight.current) return;
     pairingInFlight.current = true;
     // A fresh QR is exactly what clears a previously rejected credential.
@@ -756,10 +874,19 @@ export default function ControllerScreen() {
       await Promise.all([
         writeStoredValue(STORAGE_URL, credentials.bridgeUrl),
         writeStoredValue(STORAGE_TOKEN, credentials.token),
+        credentials.e2ee
+          ? writeStoredValue(STORAGE_E2EE, JSON.stringify(credentials.e2ee))
+          : deleteStoredValue(STORAGE_E2EE),
       ]);
       setBridgeUrl(credentials.bridgeUrl);
       setToken(credentials.token);
-      await connectToBridge(credentials.bridgeUrl, credentials.token, true);
+      setE2ee(credentials.e2ee ?? null);
+      await connectToBridge(
+        credentials.bridgeUrl,
+        credentials.token,
+        true,
+        credentials.e2ee ?? null,
+      );
     } catch (error) {
       announce(readableError(error), true);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -768,7 +895,7 @@ export default function ControllerScreen() {
     }
   }, [announce, connectToBridge]);
 
-  const openPairingScanner = useCallback(async () => {
+  const presentPairingScanner = useCallback(async () => {
     if (Platform.OS === 'web') {
       announce('QR pairing is available on iPhone and Android.', true);
       return;
@@ -784,6 +911,136 @@ export default function ControllerScreen() {
     setSettingsVisible(false);
     setTimeout(() => setScannerVisible(true), Platform.OS === 'ios' ? 320 : 0);
   }, [announce, cameraPermission, requestCameraPermission]);
+
+  const openPairingScanner = useCallback(async () => {
+    if (!aiConsent) {
+      pendingPairingCode.current = null;
+      setConsentContinuation('scanner');
+      setConsentVisible(true);
+      announce('Review how Codex and OpenAI process content before pairing.');
+      return;
+    }
+    await presentPairingScanner();
+  }, [aiConsent, announce, presentPairingScanner]);
+
+  const acceptPairingCode = useCallback(async (value: string) => {
+    if (!aiConsent) {
+      setScannerVisible(false);
+      pendingPairingCode.current = value;
+      setConsentContinuation('pairing');
+      setConsentVisible(true);
+      announce('Pairing paused until you review data processing.');
+      return;
+    }
+    await claimPairingCode(value);
+  }, [aiConsent, announce, claimPairingCode]);
+
+  const acceptAiConsent = useCallback(async () => {
+    const continuation = consentContinuation;
+    const pairingCode = pendingPairingCode.current;
+    pendingPairingCode.current = null;
+    await writeStoredValue(STORAGE_AI_CONSENT, AI_CONSENT_VERSION);
+    aiConsentRef.current = true;
+    setAiConsent(true);
+    setConsentVisible(false);
+    setConsentContinuation(null);
+    announce('Data-processing consent saved. You can revoke it in Settings.');
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    if (continuation === 'scanner') {
+      await presentPairingScanner();
+    } else if (continuation === 'pairing' && pairingCode) {
+      await claimPairingCode(pairingCode);
+    }
+  }, [announce, claimPairingCode, consentContinuation, presentPairingScanner]);
+
+  const declineAiConsent = useCallback(() => {
+    pendingPairingCode.current = null;
+    setConsentContinuation(null);
+    setConsentVisible(false);
+    announce(
+      aiConsent
+        ? 'Data-processing consent remains enabled.'
+        : 'Nothing was shared. You can review this choice again when you pair or use a control.',
+    );
+  }, [aiConsent, announce]);
+
+  const revokeAiConsent = useCallback(() => {
+    Alert.alert(
+      'Revoke data-processing consent?',
+      'Microdex will keep the saved Mac pairing, but every live control will remain blocked until you consent again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Revoke',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              await deleteStoredValue(STORAGE_AI_CONSENT);
+              aiConsentRef.current = false;
+              setAiConsent(false);
+              setStatus(null);
+              setRemote(null);
+              setLiveChannel('offline');
+              setSettingsVisible(false);
+              announce('Consent revoked. No new content will be sent through Microdex.');
+              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            })();
+          },
+        },
+      ],
+    );
+  }, [announce]);
+
+  const openExternal = useCallback(async (url: string, label: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      announce(`${label} could not be opened. Try again when you are online.`, true);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+  }, [announce]);
+
+  const showInfoSheet = useCallback((sheet: InfoSheet) => {
+    setSettingsVisible(false);
+    setTimeout(() => setInfoSheet(sheet), Platform.OS === 'ios' ? 320 : 0);
+  }, []);
+
+  const reviewAiConsent = useCallback(() => {
+    setSettingsVisible(false);
+    setConsentContinuation(null);
+    setTimeout(() => setConsentVisible(true), Platform.OS === 'ios' ? 320 : 0);
+  }, []);
+
+  const enterDemo = useCallback(async () => {
+    const demoRemote = createDemoRemoteState();
+    remoteRef.current = demoRemote;
+    setDemoMode(true);
+    setStatus(createDemoStatus(demoRemote, MICRO_ACTIONS.length));
+    setRemote(demoRemote);
+    setLiveChannel('live');
+    setSettingsVisible(false);
+    setScannerVisible(false);
+    setInfoSheet(null);
+    announce('Offline preview active. Every task and command here is fictional.');
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [announce]);
+
+  const exitDemo = useCallback(async () => {
+    remoteRef.current = null;
+    setDemoMode(false);
+    setStatus(null);
+    setRemote(null);
+    setLiveChannel('offline');
+    setSettingsVisible(false);
+    setInfoSheet(null);
+    announce('Offline preview closed. Pair your Mac to control the real Codex app.');
+    await Haptics.selectionAsync();
+  }, [announce]);
+
+  const leaveDemoAndPair = useCallback(() => {
+    void exitDemo().then(() => openPairingScanner());
+  }, [exitDemo, openPairingScanner]);
 
   const copyInstallCommand = useCallback(async () => {
     await Clipboard.setStringAsync('npx microdex-cli@latest setup');
@@ -835,6 +1092,8 @@ export default function ControllerScreen() {
         refreshError,
         networkType: networkState.type,
         networkConnected: networkState.isConnected,
+        transport: bridgeUrl.startsWith('https://') ? 'secure-remote' : 'local',
+        remoteAccess: latestStatus?.connection ?? null,
       },
       remote: {
         online: Boolean(remote?.online),
@@ -847,6 +1106,7 @@ export default function ControllerScreen() {
     await Haptics.selectionAsync();
   }, [
     announce,
+    bridgeRequest,
     bridgeUrl,
     networkState.isConnected,
     networkState.type,
@@ -859,16 +1119,22 @@ export default function ControllerScreen() {
     await Promise.all([
       deleteStoredValue(STORAGE_URL),
       deleteStoredValue(STORAGE_TOKEN),
+      deleteStoredValue(STORAGE_E2EE),
+      deleteStoredValue(STORAGE_AI_CONSENT),
     ]);
+    registerBridgeEncryption(bridgeUrl, null);
     setBridgeUrl(inferBridgeUrl());
     setToken('');
+    setE2ee(null);
+    aiConsentRef.current = false;
+    setAiConsent(false);
     setStatus(null);
     setRemote(null);
     setSettingsVisible(false);
     reconnectAttempt.current = 0;
     announce('Mac removed. Pair again to use Microdex.');
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [announce]);
+  }, [announce, bridgeUrl]);
 
   useEffect(() => {
     if (!incomingUrl) return;
@@ -890,6 +1156,7 @@ export default function ControllerScreen() {
   useEffect(() => {
     if (
       !credentialsReady ||
+      !aiConsent ||
       status ||
       !bridgeUrl.trim() ||
       !token.trim() ||
@@ -914,6 +1181,7 @@ export default function ControllerScreen() {
     };
   }, [
     bridgeUrl,
+    aiConsent,
     connectToBridge,
     credentialsReady,
     networkState.isConnected,
@@ -924,21 +1192,29 @@ export default function ControllerScreen() {
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active' && !status) {
+      if (nextState === 'active' && aiConsent && !status) {
         reconnectAttempt.current = 0;
         void connectToBridge(bridgeUrl, token);
       }
     });
     return () => subscription.remove();
-  }, [bridgeUrl, connectToBridge, status, token]);
+  }, [aiConsent, bridgeUrl, connectToBridge, status, token]);
 
   const requireBridge = useCallback(() => {
+    if (!demoMode && !aiConsent) {
+      pendingPairingCode.current = null;
+      setConsentContinuation(null);
+      setConsentVisible(true);
+      announce('Review and accept data processing before using live Mac controls.');
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return false;
+    }
     if (status) return true;
     setSettingsVisible(true);
     announce('Connect the bridge running on your computer first.', true);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     return false;
-  }, [announce, status]);
+  }, [aiConsent, announce, demoMode, status]);
 
   const requireVerifiedSettings = useCallback(() => {
     if (
@@ -1027,6 +1303,7 @@ export default function ControllerScreen() {
   }, [
     activeThread,
     announce,
+    bridgeRequest,
     bridgeUrl,
     flashHardwareFeedback,
     handleActionError,
@@ -1090,6 +1367,7 @@ export default function ControllerScreen() {
     [
       activeThread,
       announce,
+      bridgeRequest,
       bridgeUrl,
       effortIndex,
       flashHardwareFeedback,
@@ -1149,6 +1427,7 @@ export default function ControllerScreen() {
         }
       });
   }, [
+    bridgeRequest,
     bridgeUrl,
     encoderMode,
     flashHardwareFeedback,
@@ -1216,6 +1495,7 @@ export default function ControllerScreen() {
     }
   }, [
     announce,
+    bridgeRequest,
     bridgeUrl,
     flashHardwareFeedback,
     handleActionError,
@@ -1267,6 +1547,7 @@ export default function ControllerScreen() {
       });
   }, [
     announce,
+    bridgeRequest,
     bridgeUrl,
     flashHardwareFeedback,
     handleActionError,
@@ -1318,6 +1599,92 @@ export default function ControllerScreen() {
     announce('Listening hands-free. Press Talk once to stop.');
   }, [announce, queueDictation]);
 
+  const handleVoicePress = useCallback(async () => {
+    if (!requireBridge() || !requireVerifiedSettings()) {
+      flashHardwareFeedback(LED.error);
+      return;
+    }
+    const action = voiceActive ? 'voice-toggle-mute' : 'voice-start';
+    setLoadingAction('voice');
+    announce(voiceActive ? 'Updating the Voice microphone…' : 'Opening Voice Chat on your Mac…');
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      const next = await bridgeRequest<RemoteState>(
+        bridgeUrl,
+        token,
+        '/api/desktop/action',
+        { method: 'POST', body: { action } },
+      );
+      requireVerifiedCommand(next);
+      setRemote(next);
+      if (next.voice?.state === 'setup') {
+        announce('Voice setup is open. Choose a voice on your Mac, then press VOICE again.');
+      } else if (next.voice?.state === 'launching') {
+        announce('Voice Chat opened on your Mac. Complete anything shown there, then press VOICE again.');
+      } else if (next.voice?.state === 'active') {
+        announce(next.voice.muted ? 'Voice Chat microphone muted.' : 'Voice Chat is live on your Mac.');
+      } else {
+        announce('Voice Chat command sent to your Mac.');
+      }
+      flashHardwareFeedback(LED.complete);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      handleActionError(error);
+      flashHardwareFeedback(LED.error);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setLoadingAction(null);
+    }
+  }, [
+    announce,
+    bridgeRequest,
+    bridgeUrl,
+    flashHardwareFeedback,
+    handleActionError,
+    requireBridge,
+    requireVerifiedSettings,
+    token,
+    voiceActive,
+  ]);
+
+  const handleVoiceLongPress = useCallback(async () => {
+    if (!requireBridge() || !requireVerifiedSettings()) {
+      flashHardwareFeedback(LED.error);
+      return;
+    }
+    setLoadingAction('voice');
+    announce('Ending Voice Chat…');
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const next = await bridgeRequest<RemoteState>(
+        bridgeUrl,
+        token,
+        '/api/desktop/action',
+        { method: 'POST', body: { action: 'voice-end' } },
+      );
+      requireVerifiedCommand(next);
+      setRemote(next);
+      announce('Voice Chat ended on your Mac.');
+      flashHardwareFeedback(LED.complete);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      handleActionError(error);
+      flashHardwareFeedback(LED.error);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setLoadingAction(null);
+    }
+  }, [
+    announce,
+    bridgeRequest,
+    bridgeUrl,
+    flashHardwareFeedback,
+    handleActionError,
+    requireBridge,
+    requireVerifiedSettings,
+    token,
+  ]);
+
   useEffect(() => () => {
     if (dictationReleaseTimer.current) {
       clearTimeout(dictationReleaseTimer.current);
@@ -1363,6 +1730,7 @@ export default function ControllerScreen() {
   }, [
     activeThread?.id,
     announce,
+    bridgeRequest,
     bridgeUrl,
     closeChatSwitcher,
     handleActionError,
@@ -1445,7 +1813,7 @@ export default function ControllerScreen() {
         },
       ],
     );
-  }, [announce, bridgeUrl, handleActionError, requireBridge, token]);
+  }, [announce, bridgeRequest, bridgeUrl, handleActionError, requireBridge, token]);
 
   const openKeyEditor = useCallback((slotIndex: number) => {
     const current = programmedKeys[slotIndex];
@@ -1454,14 +1822,22 @@ export default function ControllerScreen() {
       DEFAULT_MICRO_LAYOUT[slotIndex] ??
       (`EMPT${Math.min(slotIndex + 1, 5)}` as MicroKeycapId);
     const fallback = defaultActionForKeycap(keycapId);
+    const currentActionId = programmedActionId(current);
     setEditingSlot(slotIndex);
     setChosenActionId(
-      programmedActionId(current) ??
-      (fallback?.type === 'command' ? fallback.commandId : null),
+      currentActionId ??
+      (fallback?.type === 'command'
+        ? fallback.commandId
+        : fallback?.type === 'prompt'
+          ? 'microdex.insertPrompt'
+          : null),
     );
-    setChosenKeycapId(keycapId);
     setCustomPrompt(
-      current?.action?.type === 'prompt' ? current.action.text : '',
+      current?.action?.type === 'prompt'
+        ? current.action.text
+        : fallback?.type === 'prompt'
+          ? fallback.text
+          : '',
     );
     setActionSearch('');
     void Haptics.selectionAsync();
@@ -1473,10 +1849,21 @@ export default function ControllerScreen() {
       announce('Write the custom prompt for this key.', true);
       return;
     }
+    // Keep keycapId in storage and in the bridge payload for compatibility
+    // with existing installations. It is implementation metadata now: the UI
+    // always renders the selected command's semantic icon.
+    const currentKeycapId =
+      programmedKeys[editingSlot]?.keycapId ??
+      DEFAULT_MICRO_LAYOUT[editingSlot] ??
+      (`EMPT${Math.min(editingSlot + 1, 5)}` as MicroKeycapId);
+    const commandId = chosenAction.custom
+      ? null
+      : (chosenAction.id as ProgrammableCommandId);
+    const keycapId = suggestedKeycapForCommand(commandId) ?? currentKeycapId;
     const nextKeys = programmedKeys.map((key, index) =>
       index === editingSlot
         ? {
-            keycapId: chosenKeycapId,
+            keycapId,
             action: chosenAction.custom
               ? {
                   type: 'prompt' as const,
@@ -1492,14 +1879,11 @@ export default function ControllerScreen() {
     setProgrammedKeys(nextKeys);
     await writeStoredValue(STORAGE_PROGRAMMED_KEYS, JSON.stringify(nextKeys));
     setEditingSlot(null);
-    announce(
-      `${chosenKeycapId} now runs ${chosenAction.label} on the active chat.`,
-    );
+    announce(`${chosenAction.label} assigned to key ${editingSlot + 1}.`);
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [
     announce,
     chosenAction,
-    chosenKeycapId,
     customPrompt,
     editingSlot,
     programmedKeys,
@@ -1521,6 +1905,30 @@ export default function ControllerScreen() {
     await removeProgrammedKey(editingSlot);
     setEditingSlot(null);
   }, [editingSlot, removeProgrammedKey]);
+
+  const clearAllProgrammedKeys = useCallback(() => {
+    if (!programmedKeys.some(Boolean)) return;
+    Alert.alert(
+      'Clear all programmable keys?',
+      'This removes every custom key assignment. The fixed Microdex controls stay unchanged.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear all',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              const nextKeys = programmedKeys.map(() => null);
+              setProgrammedKeys(nextKeys);
+              await writeStoredValue(STORAGE_PROGRAMMED_KEYS, JSON.stringify(nextKeys));
+              announce('All programmable keys cleared.');
+              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            })();
+          },
+        },
+      ],
+    );
+  }, [announce, programmedKeys]);
 
   const runProgrammedKey = useCallback(async (slotIndex: number) => {
     const programmed = programmedKeys[slotIndex];
@@ -1574,20 +1982,20 @@ export default function ControllerScreen() {
   ]);
 
   const sendDraft = useCallback(async () => {
-    if (!activeThread) {
-      announce('Select a Codex task first.', true);
-      return;
-    }
     const hasMobileDraft = Boolean(draft.trim());
     const text = draft.trim();
     if (!hasMobileDraft) {
-      if (!requireActionAvailable('CODEX')) return;
       await remoteAction(
         '/api/desktop/action',
         { action: 'send' },
         'send',
         'Desktop composer sent.',
       );
+      return;
+    }
+
+    if (!activeThread) {
+      announce('Select a Codex task first.', true);
       return;
     }
 
@@ -1631,11 +2039,11 @@ export default function ControllerScreen() {
   }, [
     activeThread,
     announce,
+    bridgeRequest,
     bridgeUrl,
     draft,
     handleActionError,
     remoteAction,
-    requireActionAvailable,
     requireBridge,
     token,
   ]);
@@ -1665,7 +2073,7 @@ export default function ControllerScreen() {
     } finally {
       setLoadingAction(null);
     }
-  }, [announce, bridgeUrl, handleActionError, requireBridge, token]);
+  }, [announce, bridgeRequest, bridgeUrl, handleActionError, requireBridge, token]);
 
   const handleJoystickDirection = useCallback(async (direction: JoystickDirection) => {
     const actionId = {
@@ -1791,19 +2199,19 @@ export default function ControllerScreen() {
       <HardwareKey
         accessibilityLabel={
           action
-            ? `${action.label}, ${programmed?.keycapId} keycap, active chat only`
+            ? `${action.label}, key ${slotIndex + 1}, active chat only`
             : programmed
-              ? `${programmed.keycapId}, choose a command`
+              ? `Key ${slotIndex + 1}, choose a command`
               : `Program empty key ${slotIndex + 1}`
         }
         variant="rgb"
         // Icon only, like the physical caps. The command name lives in the
         // accessibility label and in the editor, not printed on the key.
         symbol={
-          programmed ? (
-            <CodexMicroGlyph keycapId={programmed.keycapId} color={skeuo.icon} />
+          actionId ? (
+            <CodexCommandGlyph actionId={actionId} size={24} color={skeuo.icon} />
           ) : (
-            <MaterialCommunityIcons name="plus" size={22} color={skeuo.icon} />
+            <CentralIcon name="plus" size={22} color={skeuo.icon} />
           )
         }
         phase={slotIndex / 6}
@@ -1839,8 +2247,8 @@ export default function ControllerScreen() {
         commandCopied && styles.gateCopyButtonDone,
         pressed && styles.gateButtonPressed,
       ]}>
-      <MaterialCommunityIcons
-        name={commandCopied ? 'check' : 'content-copy'}
+      <CentralIcon
+        name={commandCopied ? 'check' : 'copy'}
         size={15}
         color={commandCopied ? theme.online : theme.textMuted}
       />
@@ -1859,17 +2267,14 @@ export default function ControllerScreen() {
         )}
         {!status ? (
           <View style={styles.connectionGate}>
-            <View style={[styles.gateBrandBar, { paddingTop: Math.max(insets.top, 14) }]}>
-              <View style={styles.gateBrandMark}>
-                <CodexSymbol size={13} color={theme.bg} />
-              </View>
-              <Text style={styles.gateBrandName}>Microdex</Text>
-            </View>
             <ScrollView
               style={styles.screenBody}
               contentContainerStyle={[
                 styles.connectionGateContent,
-                { paddingBottom: Math.max(insets.bottom, 24) },
+                {
+                  paddingTop: Math.max(insets.top + 32, 56),
+                  paddingBottom: Math.max(insets.bottom, 24),
+                },
               ]}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}>
@@ -1892,7 +2297,7 @@ export default function ControllerScreen() {
                     <Text style={styles.gateTitleMono}>bridge not reachable</Text>
                   </View>
                   <Text style={styles.gateNote}>
-                    Open Codex, then run the Microdex bridge on the Mac you paired with.
+                    Wake your Mac and open Codex. The background bridge reconnects automatically.
                   </Text>
 
                   <View style={styles.gateCommandRow}>
@@ -1914,7 +2319,7 @@ export default function ControllerScreen() {
                     {bridgeConnecting ? (
                       <ActivityIndicator size="small" color={theme.bg} />
                     ) : (
-                      <MaterialCommunityIcons name="refresh" size={17} color={theme.bg} />
+                      <CentralIcon name="refresh" size={17} color={theme.bg} />
                     )}
                     <Text style={styles.gatePrimaryButtonText}>Retry connection</Text>
                   </Pressable>
@@ -1925,7 +2330,7 @@ export default function ControllerScreen() {
                       styles.gateSecondaryButton,
                       pressed && styles.gateButtonPressed,
                     ]}>
-                    <MaterialCommunityIcons name="qrcode-scan" size={17} color={theme.text} />
+                    <CentralIcon name="qrCode" size={17} color={theme.text} />
                     <Text style={styles.gateSecondaryButtonText}>Pair another Mac</Text>
                   </Pressable>
                   <Pressable
@@ -1951,7 +2356,7 @@ export default function ControllerScreen() {
                       <View style={styles.gateStepCopy}>
                         <Text style={styles.gateStepTitle}>Start the Mac bridge</Text>
                         <Text style={styles.gateStepBody}>
-                          Paste this in Terminal and leave the window open.
+                          Run this once on a Mac with Codex signed in. Setup installs an automatic background bridge, so Terminal can close after pairing.
                         </Text>
 
                         <View style={styles.gateCommandRow}>
@@ -1979,7 +2384,7 @@ export default function ControllerScreen() {
                       <View style={styles.gateStepCopy}>
                         <Text style={styles.gateStepTitle}>Play with the keyboard</Text>
                         <Text style={styles.gateStepBody}>
-                          Twelve keys, a joystick and a dial to drive Codex.
+                          Twelve keys, a joystick and a dial control your Mac. Or explore everything without a Mac first.
                         </Text>
 
                         <View style={styles.gateKeyPreview}>
@@ -2004,11 +2409,25 @@ export default function ControllerScreen() {
                       styles.gatePrimaryButton,
                       pressed && styles.gateButtonPressed,
                     ]}>
-                    <MaterialCommunityIcons name="qrcode-scan" size={17} color={theme.bg} />
+                    <CentralIcon name="qrCode" size={17} color={theme.bg} />
                     <Text style={styles.gatePrimaryButtonText}>Scan pairing code</Text>
                   </Pressable>
 
-                  <Text style={styles.gateFootnote}>Login and projects stay on your Mac</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Explore Microdex without a Mac"
+                    onPress={() => void enterDemo()}
+                    style={({ pressed }) => [
+                      styles.gateDemoButton,
+                      pressed && styles.gateButtonPressed,
+                    ]}>
+                    <MaterialCommunityIcons name="play-outline" size={15} color={theme.textMuted} />
+                    <Text style={styles.gateDemoButtonText}>Explore without a Mac</Text>
+                  </Pressable>
+
+                  <Text style={styles.gateFootnote}>
+                    Requires macOS, Codex signed in, Node.js 20.19+ and internet. Login and projects stay on your Mac.
+                  </Text>
                 </View>
               )}
             </ScrollView>
@@ -2047,8 +2466,8 @@ export default function ControllerScreen() {
                   styles.threadSwitcherMain,
                   pressed && styles.threadSwitcherPressed,
                 ]}>
-                <MaterialCommunityIcons
-                  name="message-text-outline"
+                <CentralIcon
+                  name="chat"
                   size={14}
                   color={theme.textMuted}
                 />
@@ -2068,7 +2487,7 @@ export default function ControllerScreen() {
                 {loadingAction === 'select' ? (
                   <ActivityIndicator size="small" color={theme.textMuted} />
                 ) : (
-                  <MaterialCommunityIcons name="chevron-right" size={17} color={theme.textMuted} />
+                  <CentralIcon name="chevronRight" size={17} color={theme.textMuted} />
                 )}
               </Pressable>
             </View>
@@ -2080,8 +2499,8 @@ export default function ControllerScreen() {
                 void Haptics.selectionAsync();
               }}
               style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}>
-              <MaterialCommunityIcons
-                name={mode === 'dark' ? 'weather-sunny' : 'weather-night'}
+              <CentralIcon
+                name={mode === 'dark' ? 'sun' : 'moon'}
                 size={17}
                 color={theme.text}
               />
@@ -2091,7 +2510,7 @@ export default function ControllerScreen() {
               accessibilityLabel="Open Microdex settings"
               onPress={() => setSettingsVisible(true)}
               style={({ pressed }) => [styles.statusButton, pressed && styles.iconButtonPressed]}>
-              <MaterialCommunityIcons name="cog-outline" size={18} color={theme.text} />
+              <CentralIcon name="settings" size={18} color={theme.text} />
               <View
                 style={[
                   styles.headerStatusDot,
@@ -2122,7 +2541,7 @@ export default function ControllerScreen() {
             <Text style={styles.frameMarkTop} pointerEvents="none">↑</Text>
             <View style={styles.sideLabelLeftWrap} pointerEvents="none">
               <Text style={styles.sideLabelLeft} numberOfLines={1}>
-                WORK LOUDER | OPENAI 2026
+                MICRODEX · INDEPENDENT COMPANION · 2026
               </Text>
             </View>
             <View style={styles.sideLabelRightWrap} pointerEvents="none">
@@ -2180,7 +2599,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Toggle Fast Mode"
-                    symbol={<LightningSymbol color={skeuo.icon} />}
+                    symbol={<CodexMicroGlyph keycapId="FAST" color={skeuo.icon} />}
                     unavailableReason={unavailableReason('FAST')}
                     disabled={loadingAction === 'fast'}
                     onPress={() => void toggleFast()}
@@ -2189,7 +2608,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Approve current request"
-                    icon="check-circle-outline"
+                    symbol={<CodexMicroGlyph keycapId="APPR" color={skeuo.icon} />}
                     unavailableReason={unavailableReason('APPR')}
                     disabled={loadingAction === 'approve'}
                     active={Boolean(remote?.pendingApproval)}
@@ -2200,7 +2619,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Decline current request"
-                    icon="close-circle-outline"
+                    symbol={<CodexMicroGlyph keycapId="REJ" color={skeuo.icon} />}
                     unavailableReason={unavailableReason('REJ')}
                     disabled={loadingAction === 'decline'}
                     onPress={() => void resolveApproval('decline')}
@@ -2209,7 +2628,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Continue in a new chat"
-                    symbol={<ExpandSymbol color={skeuo.icon} />}
+                    symbol={<CodexMicroGlyph keycapId="SPLIT" color={skeuo.icon} />}
                     unavailableReason={unavailableReason('SPLIT')}
                     disabled={loadingAction === 'fork'}
                     onPress={() => void forkCurrentTask()}
@@ -2267,10 +2686,10 @@ export default function ControllerScreen() {
                     <View style={styles.touchCenter} />
                   </View>
                 </Pressable>
-                <View style={styles.wideSlot}>
+                <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Push to talk"
-                    icon="microphone-outline"
+                    symbol={<CodexMicroGlyph keycapId="MIC" color={skeuo.icon} />}
                     active={dictationActive}
                     glowColor={dictationActive ? LED_RECORDING : undefined}
                     unavailableReason={unavailableReason('MIC')}
@@ -2282,11 +2701,31 @@ export default function ControllerScreen() {
                 </View>
                 <View style={styles.squareSlot}>
                   <HardwareKey
-                    accessibilityLabel="Send message"
-                    symbol={<CodexSymbol color={skeuo.icon} />}
-                    unavailableReason={unavailableReason('CODEX')}
+                    accessibilityLabel={
+                      voiceActive
+                        ? `${voiceMuted ? 'Unmute' : 'Mute'} Voice Chat microphone; hold to end`
+                        : 'Start Voice Chat on the Mac'
+                    }
+                    symbol={<CodexVoiceGlyph color={skeuo.icon} />}
+                    active={voiceActive || voiceState === 'setup' || voiceState === 'launching'}
+                    glowColor={
+                      voiceActive || voiceState === 'setup' || voiceState === 'launching'
+                        ? LED_VOICE
+                        : undefined
+                    }
+                    disabled={loadingAction === 'voice'}
+                    onPress={() => void handleVoicePress()}
+                    onLongPress={() => void handleVoiceLongPress()}
+                  />
+                </View>
+                <View style={styles.squareSlot}>
+                  <HardwareKey
+                    accessibilityLabel="Send Microdex draft or desktop composer"
+                    symbol={<CodexMicroGlyph keycapId="CODEX" color={skeuo.icon} />}
+                    unavailableReason={draft.trim() ? unavailableReason('CODEX') : undefined}
                     disabled={loadingAction === 'send'}
-                    onPress={openRemoteComposer}
+                    onPress={() => void sendDraft()}
+                    onLongPress={openRemoteComposer}
                   />
                 </View>
               </View>
@@ -2298,7 +2737,7 @@ export default function ControllerScreen() {
                   accessibilityLabel="Connect your Mac to Codex Micro"
                   onPress={() => setSettingsVisible(true)}
                   style={({ pressed }) => [styles.buildLink, pressed && styles.buildLinkPressed]}>
-                  <MaterialCommunityIcons name="link-variant" size={12} color={skeuo.accent} />
+                  <CentralIcon name="link" size={12} color={skeuo.accent} />
                   <Text style={styles.buildLinkText}>CONNECT YOUR MAC</Text>
                 </Pressable>
               )}
@@ -2312,7 +2751,7 @@ export default function ControllerScreen() {
           <View style={styles.composerHeader}>
             <View style={styles.composerIdentity}>
               <View style={styles.composerChatIcon}>
-                <MaterialCommunityIcons name="message-text-outline" size={16} color={theme.online} />
+                <CentralIcon name="chat" size={16} color={theme.online} />
               </View>
               <View style={styles.composerIdentityText}>
                 <Text style={styles.composerKicker}>Chat to Codex</Text>
@@ -2323,7 +2762,7 @@ export default function ControllerScreen() {
               {loadingAction ? (
                 <ActivityIndicator size="small" color={theme.textMuted} />
               ) : statusIcon ? (
-                <MaterialCommunityIcons
+                <CentralIcon
                   name={statusIcon}
                   size={13}
                   color={activeMeta.textColor}
@@ -2343,8 +2782,8 @@ export default function ControllerScreen() {
           </View>
 
           <View style={styles.composerBox}>
-            <MaterialCommunityIcons
-              name="chat-outline"
+            <CentralIcon
+              name="chat"
               size={18}
               color={theme.textFaint}
               style={styles.composerLeadingIcon}
@@ -2374,7 +2813,7 @@ export default function ControllerScreen() {
               {loadingAction === 'send' ? (
                 <ActivityIndicator size="small" color={theme.accentText} />
               ) : (
-                <MaterialCommunityIcons name="arrow-up" size={20} color={theme.accentText} />
+                <CentralIcon name="arrowUp" size={20} color={theme.accentText} />
               )}
             </Pressable>
           </View>
@@ -2412,7 +2851,7 @@ export default function ControllerScreen() {
                       {removing ? (
                         <ActivityIndicator size="small" color={theme.danger} />
                       ) : (
-                        <MaterialCommunityIcons name="close" size={15} color={theme.textFaint} />
+                        <CentralIcon name="close" size={15} color={theme.textFaint} />
                       )}
                     </Pressable>
                   </View>
@@ -2426,14 +2865,14 @@ export default function ControllerScreen() {
               {activeThread?.fastMode ? 'Fast' : 'Standard'} · {supportedReasoningEfforts[dialIndex]}
             </Text>
             <View style={styles.composerRoute}>
-              <MaterialCommunityIcons name="monitor-arrow-down-variant" size={12} color={theme.textFaint} />
+              <CentralIcon name="output" size={12} color={theme.textFaint} />
               <Text style={styles.composerMeta}>OUTPUT ON MAC</Text>
             </View>
           </View>
 
           {noticeError ? (
             <View style={[styles.notice, styles.noticeError, styles.composerNotice]}>
-              <MaterialCommunityIcons name="alert-circle-outline" size={16} color={theme.dangerText} />
+              <CentralIcon name="alert" size={16} color={theme.dangerText} />
               <Text style={[styles.noticeText, styles.noticeTextError]}>{notice}</Text>
             </View>
           ) : null}
@@ -2493,7 +2932,7 @@ export default function ControllerScreen() {
                     accessibilityLabel="Close key manager"
                     onPress={() => setKeyManagerVisible(false)}
                     style={styles.closeButton}>
-                    <MaterialCommunityIcons name="close" size={20} color={theme.text} />
+                    <CentralIcon name="close" size={20} color={theme.text} />
                   </Pressable>
                 </View>
               </>
@@ -2504,7 +2943,8 @@ export default function ControllerScreen() {
             </Text>
             <View style={styles.keyManagerGrid}>
               {programmedKeys.map((programmed, slotIndex) => {
-                const action = findMicroAction(programmedActionId(programmed));
+                const actionId = programmedActionId(programmed);
+                const action = findMicroAction(actionId);
                 return (
                   <View key={slotIndex} style={styles.keyManagerCard}>
                     <Pressable
@@ -2523,22 +2963,17 @@ export default function ControllerScreen() {
                         pressed && styles.actionCardPressed,
                       ]}>
                       <View style={[styles.keyManagerIcon, !action && styles.keyManagerIconEmpty]}>
-                        {programmed ? (
-                          <CodexMicroGlyph
-                            keycapId={programmed.keycapId}
+                        {actionId ? (
+                          <CodexCommandGlyph
+                            actionId={actionId}
                             size={24}
                             color={action ? theme.text : theme.blue}
                           />
                         ) : (
-                          <MaterialCommunityIcons name="plus" size={24} color={theme.blue} />
+                          <CentralIcon name="plus" size={24} color={theme.blue} />
                         )}
                       </View>
                       <Text style={styles.keyManagerSlot}>KEY {slotIndex + 1}</Text>
-                      {programmed ? (
-                        <Text style={styles.keyManagerKeycap}>
-                          {programmed.keycapId}
-                        </Text>
-                      ) : null}
                       <Text adjustsFontSizeToFit minimumFontScale={0.72} numberOfLines={1} style={styles.keyManagerLabel}>
                         {action?.label ?? (programmed ? 'Choose command' : 'Choose action')}
                       </Text>
@@ -2553,13 +2988,26 @@ export default function ControllerScreen() {
                         !programmed && styles.removeKeyButtonDisabled,
                         pressed && styles.removeKeyButtonPressed,
                       ]}>
-                      <MaterialCommunityIcons name="trash-can-outline" size={16} color={theme.danger} />
+                      <CentralIcon name="trash" size={16} color={theme.danger} />
                       <Text style={styles.removeKeyText}>REMOVE</Text>
                     </Pressable>
                   </View>
                 );
               })}
             </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Clear all programmable keys"
+              disabled={!programmedKeys.some(Boolean)}
+              onPress={clearAllProgrammedKeys}
+              style={({ pressed }) => [
+                styles.clearAllKeysButton,
+                !programmedKeys.some(Boolean) && styles.clearAllKeysButtonDisabled,
+                pressed && styles.removeKeyButtonPressed,
+              ]}>
+              <CentralIcon name="trash" size={17} color={theme.danger} />
+              <Text style={styles.clearAllKeysText}>CLEAR ALL</Text>
+            </Pressable>
           </DismissibleSheet>
         </View>
         </GestureHandlerRootView>
@@ -2597,23 +3045,23 @@ export default function ControllerScreen() {
                     accessibilityLabel="Close key catalog"
                     onPress={() => setEditingSlot(null)}
                     style={styles.closeButton}>
-                    <MaterialCommunityIcons name="close" size={20} color={theme.text} />
+                    <CentralIcon name="close" size={20} color={theme.text} />
                   </Pressable>
                 </View>
               </>
             }>
             <Text style={styles.sheetBody}>
-              Assign a Codex command to this key. The printed keycap follows the
-              command you pick.
+              Choose any Codex function. Its icon stays the same here, in the
+              key manager, and on your Microdex key.
             </Text>
             <View style={styles.searchWrap}>
-              <MaterialCommunityIcons name="magnify" size={18} color={theme.textFaint} />
+              <CentralIcon name="search" size={18} color={theme.textFaint} />
               <TextInput
                 autoCapitalize="none"
                 autoCorrect={false}
                 value={actionSearch}
                 onChangeText={setActionSearch}
-                placeholder="Search verified Codex commands"
+                placeholder="Search all Codex functions"
                 placeholderTextColor={theme.textFaint}
                 style={styles.searchInput}
               />
@@ -2632,14 +3080,6 @@ export default function ControllerScreen() {
                     onPress={() => {
                       setChosenActionId(action.id);
                       if (!action.custom) setCustomPrompt('');
-                      // The cap is no longer chosen by hand, so it always
-                      // follows the command. A custom prompt keeps a blank.
-                      const suggested = suggestedKeycapForCommand(
-                        action.id === 'microdex.insertPrompt'
-                          ? null
-                          : (action.id as ProgrammableCommandId),
-                      );
-                      setChosenKeycapId(suggested ?? 'EMPT1');
                       void Haptics.selectionAsync();
                     }}
                     style={({ pressed }) => [
@@ -2647,7 +3087,7 @@ export default function ControllerScreen() {
                       pressed && styles.actionRowPressed,
                     ]}>
                     <View style={styles.actionRowIcon}>
-                      <CodexMicroActionGlyph
+                      <CodexCommandGlyph
                         actionId={action.id}
                         size={21}
                         color={selected ? theme.text : theme.textMuted}
@@ -2668,7 +3108,7 @@ export default function ControllerScreen() {
                     </View>
                     <View style={styles.actionCheck}>
                       {selected ? (
-                        <MaterialCommunityIcons name="check" size={18} color={theme.text} />
+                        <CentralIcon name="check" size={18} color={theme.text} />
                       ) : null}
                     </View>
                   </Pressable>
@@ -2691,7 +3131,7 @@ export default function ControllerScreen() {
                 accessibilityRole="button"
                 onPress={() => void clearProgrammedKey()}
                 style={({ pressed }) => [styles.clearButton, pressed && styles.guideButtonPressed]}>
-                <MaterialCommunityIcons name="delete-outline" size={18} color={theme.textMuted} />
+                <CentralIcon name="trash" size={18} color={theme.textMuted} />
                 <Text style={styles.clearButtonText}>CLEAR</Text>
               </Pressable>
               <Pressable
@@ -2704,7 +3144,7 @@ export default function ControllerScreen() {
                   pressed && styles.connectButtonPressed,
                 ]}>
                 <Text style={styles.connectButtonText}>SAVE KEY</Text>
-                <MaterialCommunityIcons name="check" size={20} color={theme.accentText} />
+                <CentralIcon name="check" size={20} color={theme.accentText} />
               </Pressable>
             </View>
           </DismissibleSheet>
@@ -2740,7 +3180,7 @@ export default function ControllerScreen() {
                     accessibilityLabel="Close key guide"
                     onPress={() => setGuideVisible(false)}
                     style={styles.closeButton}>
-                    <MaterialCommunityIcons name="close" size={20} color={theme.text} />
+                    <CentralIcon name="close" size={20} color={theme.text} />
                   </Pressable>
                 </View>
               </>
@@ -2795,21 +3235,28 @@ export default function ControllerScreen() {
                 theme={theme}
                 actionId="composer.startDictation"
                 title="Talk and Send"
-                body="Hold Talk while speaking and release to stop. Double-press Talk to keep listening hands-free; press it once more to stop. Send submits the desktop composer."
+                body="Hold Talk while speaking and release to stop. Double-press Talk to keep listening hands-free. Send submits a Microdex draft when present, otherwise it submits the desktop composer."
+              />
+              <GuideItem
+                styles={styles}
+                theme={theme}
+                icon="waveform"
+                title="Voice Chat"
+                body="VOICE opens native Codex Voice Chat on the Mac. While it is live, tap to mute or unmute and hold to end. MIC remains desktop dictation. Audio never passes through the phone."
               />
               <GuideItem
                 styles={styles}
                 theme={theme}
                 icon="label-outline"
-                title="Keycap labels"
-                body="GIT, PR, BUG, YOLO and the other interchangeable caps are labels only. They do nothing until you assign one of the verified commands below."
+                title="Codex Micro keycaps"
+                body="The licensed keycap artwork keeps its familiar default: GIT commits, PR opens a pull request, YOLO inserts :yolo:, and so on. Microdex remains an independent companion and every slot can be reassigned."
               />
 
               <View style={styles.guideSectionIntro}>
                 <Text style={styles.guideSectionTitle}>Assignable keys</Text>
                 <Text style={styles.guideSectionBody}>
-                  These are the commands Microdex can execute reliably. Open Customize keys, choose
-                  any visual keycap, assign a command, and save.
+                  These are the commands Microdex can execute. Open Customize keys, pick a
+                  keycap from the tray artwork, confirm or change its command, and save.
                 </Text>
               </View>
               {guideGroups.map((group) => (
@@ -2856,7 +3303,7 @@ export default function ControllerScreen() {
                     accessibilityLabel="Close settings"
                     onPress={() => setSettingsVisible(false)}
                     style={styles.closeButton}>
-                    <MaterialCommunityIcons name="close" size={18} color={theme.text} />
+                    <CentralIcon name="close" size={18} color={theme.text} />
                   </Pressable>
                 </View>
               </>
@@ -2882,8 +3329,8 @@ export default function ControllerScreen() {
                       commandCopied && styles.settingsCopyChipDone,
                       pressed && styles.gateButtonPressed,
                     ]}>
-                    <MaterialCommunityIcons
-                      name={commandCopied ? 'check' : 'content-copy'}
+                    <CentralIcon
+                      name={commandCopied ? 'check' : 'copy'}
                       size={14}
                       color={commandCopied ? theme.online : theme.textMuted}
                     />
@@ -2897,12 +3344,12 @@ export default function ControllerScreen() {
                     styles.settingsPrimaryButton,
                     pressed && styles.gateButtonPressed,
                   ]}>
-                  <MaterialCommunityIcons name="qrcode-scan" size={16} color={theme.bg} />
+                  <CentralIcon name="qrCode" size={16} color={theme.bg} />
                   <Text style={styles.settingsPrimaryButtonText}>Scan pairing code</Text>
                 </Pressable>
                 {noticeError ? (
                   <View style={[styles.notice, styles.noticeError]}>
-                    <MaterialCommunityIcons name="alert-circle-outline" size={16} color={theme.dangerText} />
+                    <CentralIcon name="alert" size={16} color={theme.dangerText} />
                     <Text style={[styles.noticeText, styles.noticeTextError]}>{notice}</Text>
                   </View>
                 ) : null}
@@ -2923,8 +3370,8 @@ export default function ControllerScreen() {
                           void Haptics.selectionAsync();
                         }}
                         style={[styles.themeSegmentOption, active && styles.themeSegmentOptionActive]}>
-                        <MaterialCommunityIcons
-                          name={option === 'dark' ? 'weather-night' : 'weather-sunny'}
+                        <CentralIcon
+                          name={option === 'dark' ? 'moon' : 'sun'}
                           size={15}
                           color={active ? theme.text : theme.textMuted}
                         />
@@ -2976,7 +3423,7 @@ export default function ControllerScreen() {
                   }}
                   style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
                   <Text style={styles.settingsLinkTitle}>Customize keys</Text>
-                  <MaterialCommunityIcons name="chevron-right" size={18} color={theme.textFaint} />
+                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
@@ -2986,7 +3433,7 @@ export default function ControllerScreen() {
                   }}
                   style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
                   <Text style={styles.settingsLinkTitle}>Controls guide</Text>
-                  <MaterialCommunityIcons name="chevron-right" size={18} color={theme.textFaint} />
+                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
@@ -2994,22 +3441,350 @@ export default function ControllerScreen() {
                   onPress={() => void copyDiagnostics()}
                   style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
                   <Text style={styles.settingsLinkTitle}>Copy diagnostics</Text>
-                  <MaterialCommunityIcons name="content-copy" size={16} color={theme.textFaint} />
+                  <CentralIcon name="copy" size={16} color={theme.textFaint} />
                 </Pressable>
               </View>
 
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void forgetPairedMac()}
-                style={({ pressed }) => [
-                  styles.settingsDangerLink,
-                  pressed && styles.gateButtonPressed,
-                ]}>
-                <Text style={styles.settingsDangerLinkText}>Forget this Mac</Text>
-              </Pressable>
+              <View style={styles.settingsGroup}>
+                <Text style={styles.settingsGroupLabel}>Offline Experience</Text>
+                <Text style={styles.settingsSupportingText}>
+                  The offline preview runs entirely on this device with fictional tasks. It never contacts a Mac, Cloudflare or OpenAI.
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => void (demoMode ? exitDemo() : enterDemo())}
+                  style={({ pressed }) => [
+                    styles.settingsLinkRow,
+                    pressed && styles.settingsLinkRowPressed,
+                  ]}>
+                  <Text style={styles.settingsLinkTitle}>
+                    {demoMode ? 'Exit offline preview' : 'Explore without a Mac'}
+                  </Text>
+                  <MaterialCommunityIcons
+                    name={demoMode ? 'exit-to-app' : 'play-outline'}
+                    size={18}
+                    color={theme.textFaint}
+                  />
+                </Pressable>
+                {demoMode ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={leaveDemoAndPair}
+                    style={({ pressed }) => [
+                      styles.settingsLinkRow,
+                      pressed && styles.settingsLinkRowPressed,
+                    ]}>
+                    <Text style={styles.settingsLinkTitle}>Pair a real Mac</Text>
+                    <CentralIcon name="qrCode" size={16} color={theme.textFaint} />
+                  </Pressable>
+                ) : null}
+              </View>
+
+              <View style={styles.settingsGroup}>
+                <Text style={styles.settingsGroupLabel}>Privacy & Support</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => showInfoSheet('privacy')}
+                  style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
+                  <Text style={styles.settingsLinkTitle}>Privacy Policy</Text>
+                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={reviewAiConsent}
+                  style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
+                  <View>
+                    <Text style={styles.settingsLinkTitle}>AI data processing</Text>
+                    <Text style={styles.settingsLinkMeta}>
+                      {aiConsent ? 'Consent enabled' : 'Not enabled'}
+                    </Text>
+                  </View>
+                  <View style={[
+                    styles.consentStatusDot,
+                    { backgroundColor: aiConsent ? theme.online : theme.textFaint },
+                  ]} />
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => showInfoSheet('support')}
+                  style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
+                  <Text style={styles.settingsLinkTitle}>Support</Text>
+                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => showInfoSheet('licenses')}
+                  style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
+                  <Text style={styles.settingsLinkTitle}>Licenses & Attributions</Text>
+                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => showInfoSheet('about')}
+                  style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
+                  <View>
+                    <Text style={styles.settingsLinkTitle}>About Microdex</Text>
+                    <Text style={styles.settingsLinkMeta}>
+                      Version {appInfo.version} ({appInfo.buildNumber})
+                    </Text>
+                  </View>
+                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
+                </Pressable>
+              </View>
+
+              {!demoMode ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => void forgetPairedMac()}
+                  style={({ pressed }) => [
+                    styles.settingsDangerLink,
+                    pressed && styles.gateButtonPressed,
+                  ]}>
+                  <Text style={styles.settingsDangerLinkText}>Forget this Mac and consent</Text>
+                </Pressable>
+              ) : null}
             </ScrollView>
           </DismissibleSheet>
         </KeyboardAvoidingView>
+        </GestureHandlerRootView>
+      </Modal>
+
+      <Modal
+        visible={consentVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={declineAiConsent}>
+        <GestureHandlerRootView style={styles.modalGestureRoot}>
+          <View style={styles.modalBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={declineAiConsent} />
+            <DismissibleSheet
+              open={consentVisible}
+              onDismiss={declineAiConsent}
+              style={[
+                styles.sheet,
+                styles.consentSheet,
+                { paddingBottom: Math.max(insets.bottom, 18) + 12 },
+              ]}
+              header={
+                <>
+                  <SheetHandlePill color={theme.borderStrong} />
+                  <View style={styles.sheetTitleRow}>
+                    <View style={styles.consentTitleCopy}>
+                      <Text style={styles.sheetKicker}>YOUR DATA, YOUR CHOICE</Text>
+                      <Text style={styles.sheetTitle}>How live controls process content</Text>
+                    </View>
+                    <Pressable
+                      accessibilityLabel="Close data processing information"
+                      onPress={declineAiConsent}
+                      style={styles.closeButton}>
+                      <CentralIcon name="close" size={19} color={theme.text} />
+                    </Pressable>
+                  </View>
+                </>
+              }>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <Text style={styles.consentLead}>
+                  Microdex sends only the commands and messages you choose through your paired Mac.
+                </Text>
+                <View style={styles.consentPoint}>
+                  <Text style={styles.consentPointNumber}>01</Text>
+                  <Text style={styles.consentPointText}>
+                    Content is encrypted between this iPhone and your Mac. The Cloudflare relay carries ciphertext and cannot read it.
+                  </Text>
+                </View>
+                <View style={styles.consentPoint}>
+                  <Text style={styles.consentPointNumber}>02</Text>
+                  <Text style={styles.consentPointText}>
+                    When you send text or start Voice Chat, Codex and OpenAI process that content under the OpenAI account already signed in on your Mac.
+                  </Text>
+                </View>
+                <View style={styles.consentPoint}>
+                  <Text style={styles.consentPointNumber}>03</Text>
+                  <Text style={styles.consentPointText}>
+                    Microdex never receives your OpenAI password. Phone audio is not captured; Voice Chat and dictation remain on the Mac.
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityRole="link"
+                  onPress={() => void openExternal(PRIVACY_URL, 'Privacy Policy')}
+                  style={({ pressed }) => [
+                    styles.inlineLink,
+                    pressed && styles.settingsLinkRowPressed,
+                  ]}>
+                  <Text style={styles.inlineLinkText}>Read the full Privacy Policy</Text>
+                  <CentralIcon name="link" size={16} color={theme.textMuted} />
+                </Pressable>
+              </ScrollView>
+              <View style={styles.consentButtons}>
+                {aiConsent ? (
+                  <>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={declineAiConsent}
+                      style={({ pressed }) => [
+                        styles.consentSecondaryButton,
+                        pressed && styles.gateButtonPressed,
+                      ]}>
+                      <Text style={styles.consentSecondaryButtonText}>KEEP ENABLED</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => {
+                        setConsentVisible(false);
+                        revokeAiConsent();
+                      }}
+                      style={({ pressed }) => [
+                        styles.consentDangerButton,
+                        pressed && styles.gateButtonPressed,
+                      ]}>
+                      <Text style={styles.consentDangerButtonText}>REVOKE</Text>
+                    </Pressable>
+                  </>
+                ) : (
+                  <>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={declineAiConsent}
+                      style={({ pressed }) => [
+                        styles.consentSecondaryButton,
+                        pressed && styles.gateButtonPressed,
+                      ]}>
+                      <Text style={styles.consentSecondaryButtonText}>NOT NOW</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => void acceptAiConsent()}
+                      style={({ pressed }) => [
+                        styles.consentPrimaryButton,
+                        pressed && styles.gateButtonPressed,
+                      ]}>
+                      <Text style={styles.consentPrimaryButtonText}>CONTINUE</Text>
+                      <CentralIcon name="check" size={18} color={theme.bg} />
+                    </Pressable>
+                  </>
+                )}
+              </View>
+            </DismissibleSheet>
+          </View>
+        </GestureHandlerRootView>
+      </Modal>
+
+      <Modal
+        visible={infoSheet !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInfoSheet(null)}>
+        <GestureHandlerRootView style={styles.modalGestureRoot}>
+          <View style={styles.modalBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setInfoSheet(null)} />
+            <DismissibleSheet
+              open={infoSheet !== null}
+              onDismiss={() => setInfoSheet(null)}
+              style={[
+                styles.sheet,
+                styles.infoSheet,
+                { paddingBottom: Math.max(insets.bottom, 18) + 12 },
+              ]}
+              header={
+                <>
+                  <SheetHandlePill color={theme.borderStrong} />
+                  <View style={styles.sheetTitleRow}>
+                    <View>
+                      <Text style={styles.sheetKicker}>MICRODEX</Text>
+                      <Text style={styles.sheetTitle}>
+                        {infoSheet === 'privacy'
+                          ? 'Privacy Policy'
+                          : infoSheet === 'support'
+                            ? 'Support'
+                            : infoSheet === 'licenses'
+                              ? 'Licenses & Attributions'
+                              : 'About Microdex'}
+                      </Text>
+                    </View>
+                    <Pressable
+                      accessibilityLabel="Close information"
+                      onPress={() => setInfoSheet(null)}
+                      style={styles.closeButton}>
+                      <CentralIcon name="close" size={19} color={theme.text} />
+                    </Pressable>
+                  </View>
+                </>
+              }>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {infoSheet === 'privacy' ? (
+                  <>
+                    <Text style={styles.infoLead}>Private by architecture, not by promise.</Text>
+                    <Text style={styles.infoParagraph}>
+                      Pairing secrets stay in the iOS Keychain and on your Mac. Live content is end-to-end encrypted through the relay. Camera frames are used only to scan the QR and are never saved or uploaded.
+                    </Text>
+                    <Text style={styles.infoParagraph}>
+                      Codex and OpenAI process only the content you intentionally send under the account on your Mac. You can revoke consent here, forget this Mac, or run microdex revoke-all on macOS.
+                    </Text>
+                    <Pressable
+                      accessibilityRole="link"
+                      onPress={() => void openExternal(PRIVACY_URL, 'Privacy Policy')}
+                      style={({ pressed }) => [styles.infoAction, pressed && styles.gateButtonPressed]}>
+                      <Text style={styles.infoActionText}>OPEN FULL POLICY</Text>
+                      <CentralIcon name="link" size={17} color={theme.bg} />
+                    </Pressable>
+                  </>
+                ) : infoSheet === 'support' ? (
+                  <>
+                    <Text style={styles.infoLead}>Need help with pairing or a control?</Text>
+                    <Text style={styles.infoParagraph}>
+                      Copy Diagnostics from Settings and include the failed button name. The report contains versions and connection state, but never your bridge token or encryption key.
+                    </Text>
+                    <Pressable
+                      accessibilityRole="link"
+                      onPress={() => void openExternal(SUPPORT_URL, 'Microdex Support')}
+                      style={({ pressed }) => [styles.infoAction, pressed && styles.gateButtonPressed]}>
+                      <Text style={styles.infoActionText}>OPEN SUPPORT</Text>
+                      <CentralIcon name="link" size={17} color={theme.bg} />
+                    </Pressable>
+                  </>
+                ) : infoSheet === 'licenses' ? (
+                  <>
+                    <Text style={styles.infoLead}>Open source, with attribution.</Text>
+                    <Text style={styles.infoParagraph}>
+                      Microdex is distributed under the MIT License. The optional Native Micro channel contains MIT-licensed work with its original notices. Codex Micro keycap artwork is included with permission and remains the property of its respective rights holders.
+                    </Text>
+                    <Pressable
+                      accessibilityRole="link"
+                      onPress={() => void openExternal(LICENSE_URL, 'Microdex License')}
+                      style={({ pressed }) => [styles.infoSecondaryAction, pressed && styles.gateButtonPressed]}>
+                      <Text style={styles.infoSecondaryActionText}>MICRODEX LICENSE</Text>
+                      <CentralIcon name="link" size={16} color={theme.text} />
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="link"
+                      onPress={() => void openExternal(THIRD_PARTY_LICENSE_URL, 'Third-party licenses')}
+                      style={({ pressed }) => [styles.infoSecondaryAction, pressed && styles.gateButtonPressed]}>
+                      <Text style={styles.infoSecondaryActionText}>THIRD-PARTY NOTICES</Text>
+                      <CentralIcon name="link" size={16} color={theme.text} />
+                    </Pressable>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.aboutMark}><MicrodexMark size={64} /></View>
+                    <Text style={styles.infoLead}>An independent remote for your own Mac.</Text>
+                    <Text style={styles.infoParagraph}>
+                      Microdex is an independent open-source companion. It is not affiliated with or endorsed by OpenAI or Work Louder. Codex access is not included and every real action executes on a user-owned Mac.
+                    </Text>
+                    <Text style={styles.infoVersion}>
+                      APP {appInfo.version} ({appInfo.buildNumber}) · {demoMode ? 'OFFLINE PREVIEW' : `BRIDGE ${status?.bridge?.version ?? 'OFFLINE'}`}
+                    </Text>
+                    <Pressable
+                      accessibilityRole="link"
+                      onPress={() => void openExternal(PROJECT_URL, 'Microdex repository')}
+                      style={({ pressed }) => [styles.infoAction, pressed && styles.gateButtonPressed]}>
+                      <Text style={styles.infoActionText}>OPEN SOURCE REPOSITORY</Text>
+                      <CentralIcon name="link" size={17} color={theme.bg} />
+                    </Pressable>
+                  </>
+                )}
+              </ScrollView>
+            </DismissibleSheet>
+          </View>
         </GestureHandlerRootView>
       </Modal>
 
@@ -3031,7 +3806,7 @@ export default function ControllerScreen() {
               accessibilityLabel="Close QR scanner"
               onPress={() => setScannerVisible(false)}
               style={styles.scannerClose}>
-              <MaterialCommunityIcons name="close" size={23} color="#FFFFFF" />
+              <CentralIcon name="close" size={23} color="#FFFFFF" />
             </Pressable>
             <Text style={styles.scannerTitle}>Scan your computer</Text>
             <View style={styles.scannerHeaderSpacer} />
@@ -3062,30 +3837,6 @@ function createStyles(theme: ThemePalette) {
     connectionGateContent: {
       flexGrow: 1,
       paddingHorizontal: 24,
-      paddingTop: 44,
-    },
-    gateBrandBar: {
-      paddingHorizontal: 24,
-      paddingBottom: 14,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 9,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: theme.divider,
-    },
-    gateBrandMark: {
-      width: 24,
-      height: 24,
-      borderRadius: 7,
-      backgroundColor: theme.text,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    gateBrandName: {
-      fontFamily: Fonts.sansSemi,
-      fontSize: 15,
-      letterSpacing: -0.3,
-      color: theme.text,
     },
     gateContent: {
       width: '100%', maxWidth: 430, alignSelf: 'stretch',
@@ -3267,6 +4018,21 @@ function createStyles(theme: ThemePalette) {
       fontSize: 15,
       letterSpacing: -0.2,
       color: theme.text,
+    },
+    gateDemoButton: {
+      alignSelf: 'center',
+      minHeight: 44,
+      marginTop: 8,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 7,
+    },
+    gateDemoButtonText: {
+      fontFamily: Fonts.sansMedium,
+      fontSize: 13,
+      color: theme.textMuted,
     },
     gateTertiaryButton: {
       height: 44, marginTop: 4, alignItems: 'center', justifyContent: 'center',
@@ -3590,6 +4356,8 @@ function createStyles(theme: ThemePalette) {
       backgroundColor: theme.surface, borderTopWidth: 1, borderColor: theme.border,
     },
     settingsSheet: { maxHeight: '88%' },
+    consentSheet: { maxHeight: '92%' },
+    infoSheet: { maxHeight: '86%' },
     settingsContent: { paddingTop: 4, paddingBottom: 8 },
     catalogSheet: { maxHeight: '92%' },
     keyManagerSheet: { maxHeight: '88%' },
@@ -3609,6 +4377,86 @@ function createStyles(theme: ThemePalette) {
     sheetBody: {
       marginTop: 10, marginBottom: 12, fontSize: 14, lineHeight: 21,
       letterSpacing: -0.15, color: theme.textMuted,
+    },
+    consentTitleCopy: { flex: 1, paddingRight: 14 },
+    consentLead: {
+      marginTop: 18, marginBottom: 18, fontFamily: Fonts.sansSemi,
+      fontSize: 17, lineHeight: 24, letterSpacing: -0.3, color: theme.text,
+    },
+    consentPoint: {
+      paddingVertical: 14, borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: theme.divider, flexDirection: 'row', alignItems: 'flex-start', gap: 13,
+    },
+    consentPointNumber: {
+      width: 24, paddingTop: 2, fontFamily: Fonts.mono, fontSize: 10,
+      letterSpacing: 0.5, color: theme.textFaint,
+    },
+    consentPointText: {
+      flex: 1, fontFamily: Fonts.sans, fontSize: 13.5, lineHeight: 20,
+      letterSpacing: -0.1, color: theme.textMuted,
+    },
+    inlineLink: {
+      minHeight: 44, marginTop: 6, paddingVertical: 11,
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    },
+    inlineLinkText: {
+      fontFamily: Fonts.sansSemi, fontSize: 13.5, color: theme.text,
+      textDecorationLine: 'underline',
+    },
+    consentButtons: {
+      paddingTop: 14, flexDirection: 'row', gap: 10,
+      borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.divider,
+    },
+    consentSecondaryButton: {
+      flex: 1, height: 50, borderRadius: 14, borderWidth: 1,
+      borderColor: theme.borderStrong, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: theme.surface,
+    },
+    consentSecondaryButtonText: {
+      fontFamily: Fonts.sansSemi, fontSize: 11, letterSpacing: 0.7, color: theme.textMuted,
+    },
+    consentDangerButton: {
+      flex: 1, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: theme.dangerSurface, borderWidth: 1, borderColor: theme.danger,
+    },
+    consentDangerButtonText: {
+      fontFamily: Fonts.sansSemi, fontSize: 11, letterSpacing: 0.7, color: theme.dangerText,
+    },
+    consentPrimaryButton: {
+      flex: 1.2, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+      flexDirection: 'row', gap: 8, backgroundColor: theme.text,
+    },
+    consentPrimaryButtonText: {
+      fontFamily: Fonts.sansSemi, fontSize: 11, letterSpacing: 0.7, color: theme.bg,
+    },
+    infoLead: {
+      marginTop: 18, fontFamily: Fonts.sansSemi, fontSize: 18,
+      lineHeight: 24, letterSpacing: -0.35, color: theme.text,
+    },
+    infoParagraph: {
+      marginTop: 14, fontFamily: Fonts.sans, fontSize: 13.5,
+      lineHeight: 21, letterSpacing: -0.12, color: theme.textMuted,
+    },
+    infoAction: {
+      minHeight: 50, marginTop: 22, borderRadius: 14, paddingHorizontal: 16,
+      backgroundColor: theme.text, flexDirection: 'row', alignItems: 'center',
+      justifyContent: 'center', gap: 9,
+    },
+    infoActionText: {
+      fontFamily: Fonts.sansSemi, fontSize: 11, letterSpacing: 0.65, color: theme.bg,
+    },
+    infoSecondaryAction: {
+      minHeight: 48, marginTop: 10, borderRadius: 14, paddingHorizontal: 15,
+      borderWidth: 1, borderColor: theme.borderStrong, flexDirection: 'row',
+      alignItems: 'center', justifyContent: 'space-between',
+    },
+    infoSecondaryActionText: {
+      fontFamily: Fonts.sansSemi, fontSize: 11, letterSpacing: 0.55, color: theme.text,
+    },
+    aboutMark: { marginTop: 20, alignSelf: 'flex-start' },
+    infoVersion: {
+      marginTop: 18, fontFamily: Fonts.mono, fontSize: 10.5,
+      lineHeight: 16, letterSpacing: 0.35, color: theme.textFaint,
     },
     cliCommand: {
       minHeight: 48, marginBottom: 14, paddingHorizontal: 14, borderRadius: 14,
@@ -3751,9 +4599,6 @@ function createStyles(theme: ThemePalette) {
     keyManagerSlot: {
       marginTop: 9, fontSize: 7, fontWeight: '900', letterSpacing: 0.85, color: theme.textFaint,
     },
-    keyManagerKeycap: {
-      marginTop: 3, fontSize: 9, fontWeight: '900', letterSpacing: 0.55, color: theme.textMuted,
-    },
     keyManagerLabel: {
       width: '100%', marginTop: 3, textAlign: 'center', fontSize: 12,
       fontWeight: '900', color: theme.text,
@@ -3765,6 +4610,15 @@ function createStyles(theme: ThemePalette) {
     removeKeyButtonDisabled: { opacity: 0.3 },
     removeKeyButtonPressed: { opacity: 0.8 },
     removeKeyText: { fontSize: 8, fontWeight: '900', letterSpacing: 0.65, color: theme.danger },
+    clearAllKeysButton: {
+      height: 46, marginTop: 12, borderRadius: 15, borderWidth: 1,
+      borderColor: theme.danger, backgroundColor: theme.dangerSurface,
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    },
+    clearAllKeysButtonDisabled: { opacity: 0.35 },
+    clearAllKeysText: {
+      fontSize: 9, fontWeight: '900', letterSpacing: 0.75, color: theme.danger,
+    },
     customPromptInput: {
       height: 82, paddingTop: 11, textAlignVertical: 'top', marginTop: 2, marginBottom: 8,
     },
@@ -3850,6 +4704,10 @@ function createStyles(theme: ThemePalette) {
       textTransform: 'uppercase',
       color: theme.textFaint,
       marginBottom: 10,
+    },
+    settingsSupportingText: {
+      marginTop: -3, marginBottom: 7, fontFamily: Fonts.sans,
+      fontSize: 12.5, lineHeight: 18, color: theme.textMuted,
     },
     settingsCommandRow: {
       minHeight: 44,
@@ -3947,6 +4805,10 @@ function createStyles(theme: ThemePalette) {
       letterSpacing: -0.2,
       color: theme.text,
     },
+    settingsLinkMeta: {
+      marginTop: 3, fontFamily: Fonts.sans, fontSize: 11.5, color: theme.textFaint,
+    },
+    consentStatusDot: { width: 8, height: 8, borderRadius: 4 },
     settingsDangerLink: {
       marginTop: 4,
       height: 44,

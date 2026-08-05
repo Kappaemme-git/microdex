@@ -1,0 +1,43 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "microdex-relay",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-04",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.05
+  },
+  "ratelimits": [
+    {
+      "name": "DEVICE_RATE_LIMITER",
+      "namespace_id": "2401",
+      "simple": {
+        "limit": 300,
+        "period": 60
+      }
+    },
+    {
+      "name": "ABUSE_RATE_LIMITER",
+      "namespace_id": "2402",
+      "simple": {
+        "limit": 600,
+        "period": 60
+      }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "DEVICE_ROOMS",
+        "class_name": "DeviceRoom"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["DeviceRoom"]
+    }
+  ]
+}

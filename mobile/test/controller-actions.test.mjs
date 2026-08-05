@@ -14,6 +14,10 @@ const hardwareKeySource = await readFile(
   new URL('../components/hardware-key.tsx', import.meta.url),
   'utf8',
 );
+const joystickSource = await readFile(
+  new URL('../components/joystick.tsx', import.meta.url),
+  'utf8',
+);
 const chatDrawerSource = await readFile(
   new URL('../components/chat-drawer.tsx', import.meta.url),
   'utf8',
@@ -38,6 +42,14 @@ const skeuoSource = await readFile(
   new URL('../components/skeuo.tsx', import.meta.url),
   'utf8',
 );
+const shellPoolSource = skeuoSource.slice(
+  skeuoSource.indexOf('export function ShellPool'),
+  skeuoSource.indexOf('export function Screw'),
+);
+const commandGlyphSource = await readFile(
+  new URL('../components/codex-command-glyph.tsx', import.meta.url),
+  'utf8',
+);
 
 test('the mobile controller never delegates keys to desktop keyboard shortcuts', () => {
   assert.doesNotMatch(controllerSource, /\/api\/actions\/shortcut/);
@@ -52,6 +64,16 @@ test('every joystick direction controls the matching Codex Micro desktop action'
   for (const action of ['plan', 'forward', 'sidebar', 'back']) {
     assert.match(controllerSource, new RegExp(`\\{ action: '${action}' \\}`));
   }
+});
+
+test('the joystick follows a real drag, commits on release, and springs home', () => {
+  assert.match(joystickSource, /Gesture\.Pan\(\)/);
+  assert.match(joystickSource, /Math\.hypot\(event\.translationX, event\.translationY\)/);
+  assert.match(joystickSource, /travel\.value \/ distance/);
+  assert.match(joystickSource, /runOnJS\(commitDirection\)\(direction\)/);
+  assert.match(joystickSource, /translateX\.value = withSpring\(0/);
+  assert.match(joystickSource, /translateY\.value = withSpring\(0/);
+  assert.doesNotMatch(joystickSource, /<Pressable/);
 });
 
 test('remote command buttons use stable action ids', () => {
@@ -73,7 +95,7 @@ test('the six lit keys are programmable and never select another chat', () => {
   );
   assert.match(controllerSource, /STORAGE_PROGRAMMED_KEYS/);
   assert.match(controllerSource, /STORAGE_LEGACY_PROGRAMMED_KEYS/);
-  assert.match(controllerSource, /EMPTY_PROGRAMMED_KEYS/);
+  assert.match(controllerSource, /defaultProgrammedKeys/);
   assert.match(controllerSource, /programmedActionId/);
   assert.match(controllerSource, /keycapId: programmed\.keycapId/);
   assert.match(controllerSource, /action: programmed\.action/);
@@ -87,22 +109,41 @@ test('programmable keys have a visible manager with replace and remove controls'
   assert.match(controllerSource, /Customize keys/i);
   assert.match(controllerSource, /visible=\{keyManagerVisible\}/);
   assert.match(controllerSource, /removeProgrammedKey/);
-  assert.match(controllerSource, /trash-can-outline/);
+  assert.match(controllerSource, /clearAllProgrammedKeys/);
+  assert.match(controllerSource, /accessibilityLabel="Clear all programmable keys"/);
+  assert.match(controllerSource, /setProgrammedKeys\(nextKeys\)/);
+  assert.match(controllerSource, /All programmable keys cleared/);
+  assert.match(controllerSource, /<CentralIcon name="trash"/);
   assert.match(controllerSource, /Choose an empty key or replace an existing one/);
 });
 
-test('the controller includes the full keycap catalog and in-app guide', () => {
+test('the controller exposes every programmable function and the in-app guide', () => {
   assert.match(controllerSource, /MICRO_ACTIONS/);
-  // The editor no longer shows a keycap grid: a cap is decoration, and choosing
-  // it by hand only produced keys whose label contradicted their command. The
-  // cap now follows the command through the catalog.
+  // Keycap metadata remains internal for saved-layout compatibility. The user
+  // chooses directly from one vertically scrolling list of Codex functions.
   assert.match(controllerSource, /suggestedKeycapForCommand/);
+  assert.match(controllerSource, /Search all Codex functions/);
+  assert.doesNotMatch(controllerSource, /KEYCAP_CATALOG/);
   assert.doesNotMatch(controllerSource, /KEYCAP LABEL/);
-  assert.match(controllerSource, /Search verified Codex commands/);
+  assert.doesNotMatch(controllerSource, /keycapScroller/);
+  assert.doesNotMatch(controllerSource, /keycapStrip/);
+  assert.doesNotMatch(controllerSource, /keycapChip/);
   assert.match(controllerSource, /PROGRAMMABLE KEY/);
   assert.match(controllerSource, /CODEX MICRO CONTROLS/);
   assert.match(controllerSource, /Approve and Reject/);
   assert.match(controllerSource, /Assignable keys/);
+});
+
+test('semantic command icons stay consistent in the picker, manager, and deck', () => {
+  assert.match(commandGlyphSource, /toggleSidebar: 'sidebarPanel'/);
+  assert.match(commandGlyphSource, /'workspace\.openSkills': 'skillsBlock'/);
+  assert.match(commandGlyphSource, /'git\.commit': 'gitCommit'/);
+  assert.match(commandGlyphSource, /'workspace\.toggleReviewPanel': 'reviewPanel'/);
+  assert.match(commandGlyphSource, /'workspace\.toggleBottomPanel': 'bottomPanel'/);
+  assert.match(controllerSource, /<CodexCommandGlyph actionId=\{actionId\} size=\{24\} color=\{skeuo\.icon\}/);
+  assert.match(controllerSource, /<CodexCommandGlyph\s+actionId=\{actionId\}\s+size=\{24\}/);
+  assert.match(controllerSource, /<CodexCommandGlyph\s+actionId=\{action\.id\}\s+size=\{21\}/);
+  assert.doesNotMatch(controllerSource, /keyManagerKeycap/);
 });
 
 test('the effort dial follows the levels supported by the active model', () => {
@@ -121,6 +162,12 @@ test('reasoning is authoritative and microphone actions have explicit start and 
   assert.match(controllerSource, /dictationReleaseTimer/);
   assert.match(controllerSource, /\}, 350\)/);
   assert.match(controllerSource, /\/api\/desktop\/action/);
+});
+
+test('native Voice Chat state is returned by the bridge', () => {
+  assert.match(controllerSource, /remote\?\.voice\?\.state/);
+  assert.match(controllerSource, /next\.voice\?\.state === 'setup'/);
+  assert.match(controllerSource, /Choose a voice on your Mac/);
 });
 
 test('the Expo preview and bridge receive the same access token', () => {
@@ -162,7 +209,7 @@ test('commands provide immediate progress feedback', () => {
 
 test('the lower panel is a chat-styled one-way remote composer', () => {
   assert.match(controllerSource, /styles\.composerPanel/);
-  assert.match(controllerSource, /message-text-outline/);
+  assert.match(controllerSource, /<CentralIcon name="chat"/);
   assert.match(controllerSource, /Chat to Codex/);
   assert.match(controllerSource, /OUTPUT ON MAC/);
   assert.match(controllerSource, /Message Codex/);
@@ -191,6 +238,24 @@ test('the mobile draft uses the desktop remote-send endpoint', () => {
   assert.doesNotMatch(controllerSource, /clientUserMessageId/);
 });
 
+test('the fixed Send key submits either the Microdex draft or the desktop composer', () => {
+  const sendDraftHandler = controllerSource.slice(
+    controllerSource.indexOf('const sendDraft'),
+    controllerSource.indexOf('const removeQueuedMessage'),
+  );
+  assert.ok(
+    sendDraftHandler.indexOf("if (!hasMobileDraft)") <
+      sendDraftHandler.indexOf("if (!activeThread)"),
+    'desktop Send must not require a selected Microdex thread',
+  );
+  assert.match(sendDraftHandler, /\{ action: 'send' \}/);
+  assert.match(sendDraftHandler, /body: \{ threadId: activeThread\.id, text \}/);
+  assert.doesNotMatch(sendDraftHandler, /requireActionAvailable\('CODEX'\)/);
+  assert.match(controllerSource, /accessibilityLabel="Send Microdex draft or desktop composer"/);
+  assert.match(controllerSource, /onPress=\{\(\) => void sendDraft\(\)\}/);
+  assert.match(controllerSource, /onLongPress=\{openRemoteComposer\}/);
+});
+
 test('queued messages stay visible and can be removed before sending', () => {
   assert.match(controllerSource, /activeMessageQueue\.map/);
   assert.match(controllerSource, /QUEUED · \{activeMessageQueue\.length\}/);
@@ -200,7 +265,7 @@ test('queued messages stay visible and can be removed before sending', () => {
   assert.match(controllerSource, /\/api\/remote\/queue\/remove/);
   assert.match(controllerSource, /disabled=\{sending \|\| removing\}/);
   assert.match(controllerSource, /removeQueuedMessage\(message\.id\)/);
-  assert.match(controllerSource, /name="trash-can-outline"/);
+  assert.match(controllerSource, /<CentralIcon name="trash"/);
 });
 
 test('the header opens a left project drawer and quickly switches synced Codex chats', () => {
@@ -217,7 +282,7 @@ test('the header opens a left project drawer and quickly switches synced Codex c
   assert.match(chatDrawerSource, /collapsedProjects\.has\(project\)/);
   assert.match(chatDrawerSource, /onPress=\{\(\) => toggleProject\(section\.project\)\}/);
   assert.match(chatDrawerSource, /accessibilityState=\{\{ expanded: !section\.collapsed \}\}/);
-  assert.match(chatDrawerSource, /section\.collapsed \? 'chevron-right' : 'chevron-down'/);
+  assert.match(chatDrawerSource, /section\.collapsed \? 'chevronRight' : 'chevronDown'/);
   assert.match(chatDrawerSource, /thread\.status === 'thinking'/);
   assert.match(controllerSource, /Animated\.loop/);
   assert.match(chatDrawerSource, /Codex status: \$\{threadMeta\.label\}/);
@@ -232,7 +297,7 @@ test('the header opens a left project drawer and quickly switches synced Codex c
   assert.match(controllerSource, /Alert\.alert\(/);
   assert.match(controllerSource, /\/api\/remote\/archive/);
   assert.match(controllerSource, /onArchive=\{archiveRemoteThread\}/);
-  assert.match(controllerSource, /name="trash-can-outline"/);
+  assert.match(controllerSource, /<CentralIcon name="trash"/);
   assert.match(chatDrawerSource, /Opens on your Mac/);
 });
 
@@ -331,6 +396,12 @@ test('the device body keeps moulded-object proportions at any width', () => {
   assert.doesNotMatch(controllerSource, /screwSlotH/);
 });
 
+test('the device light pool follows dark mode and fades before its rectangular bounds', () => {
+  assert.match(shellPoolSource, /const dark = theme\.mode === 'dark'/);
+  assert.match(shellPoolSource, /cy="48%" r="52%"/);
+  assert.match(shellPoolSource, /offset="0\.82"[^>]*stopOpacity=\{0\}/s);
+});
+
 test('chat rows reveal archive on a left swipe and projects can be archived safely', () => {
   assert.match(layoutSource, /GestureHandlerRootView/);
   assert.match(chatDrawerSource, /ReanimatedSwipeable/);
@@ -339,7 +410,7 @@ test('chat rows reveal archive on a left swipe and projects can be archived safe
   assert.match(chatDrawerSource, />ARCHIVE<\/Text>/);
   assert.match(chatDrawerSource, /swipeable\.close\(\)/);
   assert.match(chatDrawerSource, /onArchive\(thread\)/);
-  assert.match(chatDrawerSource, /folder-remove-outline/);
+  assert.match(chatDrawerSource, /name="folderRemove"/);
   assert.match(
     chatDrawerSource,
     /onArchiveProject\(section\.project, section\.allThreads\)/,

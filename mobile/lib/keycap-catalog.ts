@@ -15,7 +15,7 @@ export type KeycapDescriptor = {
    * Commands this cap is printed for. Choosing one of them in the editor selects
    * this cap, so the deck never shows a label that contradicts what the key
    * does. A cap can cover a family, e.g. NAV for both navigation directions.
-   * Caps without any are blanks or decoration.
+   * Caps without any are blanks or prompt-only legends (YOLO / YEET).
    */
   commands?: readonly ProgrammableCommandId[];
 };
@@ -23,56 +23,106 @@ export type KeycapDescriptor = {
 /**
  * The printed caps shipped with the Codex Micro, in tray order.
  *
- * Caps and commands stay independent on the hardware: a cap is a piece of
- * plastic and can sit on any switch. The `command` field is only the suggestion
- * the editor pre-selects, never a constraint.
+ * Defaults match the official Codex desktop keycap catalog. Caps and commands
+ * stay re-assignable: a cap is still a piece of plastic and can sit on any
+ * switch.
  */
 export const KEYCAP_CATALOG: readonly KeycapDescriptor[] = [
   { id: 'CODEX', name: 'Codex', icon: 'robot-outline', commands: ['composer.submit'] },
-  { id: 'OAI', name: 'OpenAI', icon: 'blur' },
-  { id: 'MIND+', name: 'Mind up', icon: 'brain', commands: ['composer.increaseReasoningEffort'] },
-  { id: 'MIND-', name: 'Mind down', icon: 'head-cog-outline', commands: ['composer.decreaseReasoningEffort'] },
+  { id: 'OAI', name: 'OpenAI', icon: 'blur', commands: ['app.openDocumentation'] },
+  {
+    id: 'MIND+',
+    name: 'Mind up',
+    icon: 'brain',
+    commands: ['composer.increaseReasoningEffort'],
+  },
+  {
+    id: 'MIND-',
+    name: 'Mind down',
+    icon: 'head-cog-outline',
+    commands: ['composer.decreaseReasoningEffort'],
+  },
   { id: 'FAST', name: 'Fast', icon: 'lightning-bolt-outline', commands: ['composer.toggleFastMode'] },
   { id: 'APPR', name: 'Approve', icon: 'check-circle-outline', commands: ['approval.approve'] },
   { id: 'REJ', name: 'Reject', icon: 'close-circle-outline', commands: ['approval.decline'] },
-  { id: 'SPLIT', name: 'Split', icon: 'call-split', commands: ['forkThread'] },
+  {
+    id: 'SPLIT',
+    name: 'Split',
+    icon: 'call-split',
+    commands: ['forkThread', 'thread.continueInWorktree'],
+  },
   { id: 'MIC', name: 'Microphone', icon: 'microphone-outline', commands: ['composer.startDictation'] },
-  { id: 'PLAY', name: 'Play', icon: 'play-circle-outline', commands: ['composer.togglePlanMode'] },
+  {
+    id: 'PLAY',
+    name: 'Play',
+    icon: 'play-circle-outline',
+    commands: ['workspace.runEnvironment', 'composer.togglePlanMode'],
+  },
   { id: 'TERM', name: 'Terminal', icon: 'console', commands: ['workspace.toggleTerminal'] },
   {
     id: 'DIFF',
     name: 'Diff',
-    icon: 'dots-vertical',
+    icon: 'plus-minus-variant',
     commands: ['workspace.toggleReviewPanel', 'workspace.toggleBottomPanel'],
   },
-  { id: 'GIT', name: 'Git', icon: 'source-branch', commands: ['thread.continueInWorktree'] },
-  { id: 'BRCH', name: 'Branch', icon: 'source-branch-plus', commands: ['forkThread'] },
-  { id: 'BRANCH', name: 'Branch out', icon: 'arrow-decision-outline', commands: ['chat.next'] },
-  { id: 'MRG', name: 'Merge', icon: 'source-merge', commands: ['chat.previous'] },
-  { id: 'PR', name: 'Pull request', icon: 'source-pull', commands: ['thread.copyMarkdown'] },
+  { id: 'GIT', name: 'Git', icon: 'source-branch', commands: ['git.commit'] },
+  {
+    id: 'BRCH',
+    name: 'Draft pull request',
+    icon: 'source-branch-plus',
+    commands: ['git.createDraftPullRequest'],
+  },
+  {
+    id: 'BRANCH',
+    name: 'Branch',
+    icon: 'arrow-decision-outline',
+    commands: ['git.createBranch', 'chat.next'],
+  },
+  {
+    id: 'MRG',
+    name: 'Merge',
+    icon: 'source-merge',
+    commands: ['git.mergePullRequest', 'chat.previous'],
+  },
+  { id: 'PR', name: 'Pull request', icon: 'source-pull', commands: ['git.createPullRequest'] },
   {
     id: 'NAV',
     name: 'Navigate',
-    icon: 'send-outline',
-    commands: ['navigateForward', 'navigateBack'],
+    icon: 'cursor-default-click-outline',
+    commands: ['workspace.openBrowser', 'navigateForward', 'navigateBack'],
   },
-  { id: 'MAGIC', name: 'Magic', icon: 'star-four-points-outline', commands: ['composer.openCommandMenu'] },
-  { id: 'PAINT', name: 'Paint', icon: 'format-paint', commands: ['workspace.toggleFileTree'] },
-  { id: 'LAB', name: 'Lab', icon: 'flask-outline', commands: ['workspace.togglePinnedSummary'] },
-  { id: 'BUG', name: 'Bug', icon: 'bug-outline', commands: ['workspace.find'] },
-  { id: 'PARTY', name: 'Party', icon: 'party-popper', commands: ['chat.new'] },
+  {
+    id: 'MAGIC',
+    name: 'Magic',
+    icon: 'star-four-points-outline',
+    commands: ['workspace.togglePinnedSummary', 'composer.openCommandMenu'],
+  },
+  {
+    id: 'PAINT',
+    name: 'Paint',
+    icon: 'format-paint',
+    commands: ['composer.attachFiles', 'workspace.toggleFileTree'],
+  },
+  { id: 'LAB', name: 'Lab', icon: 'flask-outline', commands: ['app.openSettings'] },
+  { id: 'BUG', name: 'Bug', icon: 'bug-outline', commands: ['app.sendFeedback', 'workspace.find'] },
+  { id: 'PARTY', name: 'Party', icon: 'party-popper', commands: ['workspace.openSideChat', 'chat.new'] },
   { id: 'TIME', name: 'Time', icon: 'clock-outline', commands: ['workspace.scheduled'] },
-  { id: 'DWN', name: 'Download', icon: 'tray-arrow-down', commands: ['composer.attachFiles'] },
+  { id: 'DWN', name: 'Download', icon: 'tray-arrow-down', commands: ['thread.copyMarkdown'] },
   { id: 'UPL', name: 'Upload', icon: 'cloud-upload-outline', commands: ['composer.attachFiles'] },
-  { id: 'DEL', name: 'Delete', icon: 'trash-can-outline', commands: ['composer.clear'] },
+  { id: 'DEL', name: 'Delete', icon: 'trash-can-outline', commands: ['chat.archive', 'composer.clear'] },
   { id: 'NEW', name: 'New', icon: 'plus-box-outline', commands: ['chat.new'] },
-  { id: 'FOLD', name: 'Folder', icon: 'folder-plus-outline', commands: ['chat.archive'] },
-  { id: 'SETUP', name: 'Setup', icon: 'cog-outline', commands: ['workspace.keyboardShortcuts'] },
+  { id: 'FOLD', name: 'Folder', icon: 'folder-plus-outline', commands: ['app.openFolder'] },
+  {
+    id: 'SETUP',
+    name: 'Setup',
+    icon: 'cog-outline',
+    commands: ['app.openSettings', 'workspace.keyboardShortcuts'],
+  },
   {
     id: 'APPS',
     name: 'Apps',
     icon: 'dots-grid',
-    commands: ['composer.openModelPicker', 'toggleSidebar'],
+    commands: ['workspace.openSkills', 'composer.openModelPicker', 'toggleSidebar'],
   },
   { id: 'YOLO', name: 'Yolo', icon: 'rocket-launch-outline' },
   { id: 'YEET', name: 'Yeet', icon: 'arrow-top-right-thick' },

@@ -61,8 +61,11 @@ test('an unmatched deep link recovers instead of dead-ending', async () => {
 });
 
 test('the pairing page keeps working for phones without the app', () => {
-  // The QR encodes the http form, which a camera can open; only the button uses
-  // the deep link. Losing the http form would break first-time pairing.
+  // The QR encodes an HTTP(S) page a camera can open; only the button uses the
+  // deep link. Remote pairing must preserve Cloudflare's forwarded HTTPS
+  // protocol or the app will correctly reject a public, unencrypted URL.
   assert.match(serverSource, /url\.pathname === '\/pair'/);
+  assert.match(serverSource, /request\.headers\['x-forwarded-proto'\]/);
+  assert.match(serverSource, /bridgeProtocol.*=== 'https'/s);
   assert.match(pairingSource, /export function buildPairingHttpUrl/);
 });

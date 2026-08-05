@@ -26,11 +26,15 @@ import {
   nativeShimPaths,
   requestNativeShim,
 } from '../lib/native-shim-client.mjs';
+import { deletePersistentRelayRoom } from '../lib/remote-relay.mjs';
+import { REVIEW_PAIRING_TTL_MS } from '../lib/pairing-session.mjs';
 
 const VERSION = BRIDGE_VERSION;
 const DEFAULT_PORT = 3210;
 const stateDir = process.env.MICRODEX_HOME || path.join(os.homedir(), '.microdex');
 const tokenPath = path.join(stateDir, 'access-token');
+const e2eeClientsPath = path.join(stateDir, 'e2ee-clients.json');
+const relayIdentityPath = path.join(stateDir, 'relay-device.json');
 const runtimeDir = path.join(stateDir, 'runtime');
 const runtimeCliPath = path.join(
   runtimeDir,
@@ -72,8 +76,10 @@ function printHelp() {
   ${ui.bold('Usage')}
     microdex setup      Install the background bridge and pair
     microdex pair       Show a fresh pairing QR
+    microdex review-pair Show a single-use App Review QR (7 days)
     microdex status     Check the background bridge
     microdex restart    Restart the background bridge
+    microdex revoke-all Revoke every paired phone and rotate the access key
     microdex native     Relaunch Codex with real Micro input + lighting
     microdex native status|stop|test
     microdex uninstall  Remove the background service
@@ -446,7 +452,7 @@ async function nativeMode() {
   console.log(`\n  ${ui.dim('Use “microdex native stop” to return to normal Codex mode.')}\n`);
 }
 
-async function requestPairingDetails() {
+async function requestPairingDetails({ review = false } = {}) {
   const port = Number(process.env.MICRODEX_PORT || DEFAULT_PORT);
   const token = await persistentToken();
   const response = await fetch(`http://127.0.0.1:${port}/api/pair/new`, {
@@ -456,6 +462,7 @@ async function requestPairingDetails() {
       'Content-Type': 'application/json',
       'X-Microdex-Token': token,
     },
+    body: JSON.stringify({ mode: review ? 'review' : 'standard' }),
   });
   const payload = await response.json();
   if (!response.ok || !payload.pairingUrl) {
@@ -464,22 +471,68 @@ async function requestPairingDetails() {
       'The running bridge is outdated. Stop it with Control-C, then run setup again.',
     );
   }
+  if (review && payload.mode !== 'review') {
+    throw new Error(
+      'The running bridge does not support App Review pairing yet. Run microdex setup with this CLI version first.',
+    );
+  }
   return payload;
 }
 
-async function showPairingQr({ header = true } = {}) {
+async function waitForRemotePairingDetails(
+  timeoutMs = 90_000,
+  { review = false } = {},
+) {
+  const startedAt = Date.now();
+  let latest = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    latest = await requestPairingDetails({ review });
+    // Older bridge builds do not report tunnel state. Preserve their local QR
+    // behavior instead of making the updated CLI wait forever.
+    if (!latest.remoteAccess || latest.remoteAccess.ready) return latest;
+    if (latest.remoteAccess.status === 'disabled') return latest;
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
+  return latest;
+}
+
+async function showPairingQr({ header = true, review = false } = {}) {
   if (!await bridgeHealth()) {
     throw new Error('The Microdex background bridge is offline. Run microdex setup first.');
   }
-  const details = await requestPairingDetails();
   if (header) printHeader(VERSION);
   printCheck('Background bridge', 'Running automatically');
   console.log('');
-  printStep(1, 'Open Microdex on your iPhone');
-  printStep(2, 'Tap Scan pairing QR');
+  printStep(1, 'Preparing secure connection', 'No shared Wi-Fi required');
+  const details = await waitForRemotePairingDetails(90_000, { review });
+  if (details.remoteAccess?.ready) {
+    printCheck(
+      'Remote access',
+      details.remoteAccess.transport === 'relay'
+        ? 'Stable address · ready on Wi-Fi or mobile data'
+        : 'Ready on Wi-Fi or mobile data',
+    );
+  } else {
+    printWarning(
+      'Remote access unavailable',
+      details.remoteAccess?.error || 'The fallback QR requires the same Wi-Fi',
+    );
+  }
+  printStep(
+    2,
+    review
+      ? 'Attach this QR privately to the App Review notes'
+      : 'Open Microdex and tap Scan pairing QR',
+  );
   printQr(details.pairingUrl, qrcode);
   console.log(`  ${ui.dim(`Can't scan? ${details.pairingUrl}`)}`);
-  console.log(`  ${ui.dim('One-time QR · expires in 10 minutes')}\n`);
+  console.log(`  ${ui.dim(
+    review
+      ? `Single-use reviewer QR · expires in ${Math.round(REVIEW_PAIRING_TTL_MS / 86_400_000)} days · revoke after review`
+      : details.remoteAccess?.ready
+        ? 'One-time QR · expires in 10 minutes · encrypted connection'
+        : 'One-time QR · expires in 10 minutes · local network fallback',
+  )}\n`);
 }
 
 function cleanLaunchctlError(error) {
@@ -608,15 +661,16 @@ async function setup() {
 
 async function doctor() {
   const checks = [];
-  const nodeMajor = Number(process.versions.node.split('.')[0]);
+  const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
+  const supportedNode = nodeMajor > 20 || (nodeMajor === 20 && nodeMinor >= 19);
   checks.push({
     ok: process.platform === 'darwin',
     label: 'macOS',
     detail: process.platform === 'darwin' ? os.release() : `${process.platform} is not supported yet`,
   });
   checks.push({
-    ok: nodeMajor >= 20,
-    label: 'Node.js 20+',
+    ok: supportedNode,
+    label: 'Node.js 20.19+',
     detail: process.version,
   });
 
@@ -683,6 +737,22 @@ async function status() {
     }
     if (await exists(launchAgentPath)) printCheck('Automatic startup', 'Enabled');
     else printWarning('Automatic startup', 'Not installed');
+    if (health.remoteAccess?.ready) {
+      printCheck(
+        'Remote access',
+        health.remoteAccess.transport === 'relay'
+          ? 'Stable address · ready on Wi-Fi or mobile data'
+          : 'Ready on Wi-Fi or mobile data',
+      );
+    } else if (health.remoteAccess?.status === 'disabled') {
+      printWarning('Remote access', 'Disabled; same Wi-Fi required');
+    } else if (health.remoteAccess?.status === 'cooldown') {
+      printWarning('Remote access', 'Cloudflare cooldown; retrying automatically');
+    } else if (health.remoteAccess?.status) {
+      printWarning('Remote access', 'Connecting in the background');
+    } else {
+      printWarning('Remote access', 'Update the bridge runtime to enable it');
+    }
   } else {
     printFailure('Bridge offline', `Nothing is listening on port ${port}`);
     process.exitCode = 1;
@@ -699,6 +769,43 @@ async function restart() {
   printCheck('Bridge restarted', 'Your iPhone will reconnect automatically');
 }
 
+async function confirmRevokeAll() {
+  if (process.argv.includes('--yes')) return true;
+  if (!process.stdin.isTTY) {
+    throw new Error('Run microdex revoke-all --yes in a non-interactive Terminal.');
+  }
+  const prompt = createInterface({ input: process.stdin, output: process.stdout });
+  const answer = (await prompt.question(
+    '  Revoke every paired phone? Each phone must scan a new QR. [y/N] ',
+  )).trim().toLowerCase();
+  prompt.close();
+  return answer === 'y' || answer === 'yes';
+}
+
+async function revokeAll() {
+  if (!await exists(launchAgentPath)) {
+    throw new Error('The background service is not installed. Run microdex setup first.');
+  }
+  printHeader(VERSION);
+  if (!await confirmRevokeAll()) {
+    printWarning('No devices were revoked');
+    return;
+  }
+
+  const target = `${launchDomain}/${launchAgentLabel}`;
+  await run('launchctl', ['bootout', target], { allowFailure: true });
+  await waitForLaunchAgentToUnload();
+  await Promise.all([
+    rm(tokenPath, { force: true }),
+    rm(e2eeClientsPath, { force: true }),
+  ]);
+  await persistentToken();
+  await enableAutomaticStartup();
+  if (!await waitForBridge()) throw new Error('The bridge did not restart after revoking devices.');
+  printCheck('All phones revoked', 'The bridge access key was rotated');
+  printWarning('Pair again', 'Run microdex pair and scan the new encrypted QR');
+}
+
 async function uninstall() {
   printHeader(VERSION);
   await run('launchctl', ['bootout', `${launchDomain}/${launchAgentLabel}`], {
@@ -707,7 +814,14 @@ async function uninstall() {
   await rm(launchAgentPath, { force: true });
   await rm(runtimeDir, { recursive: true, force: true });
   await rm(logsDir, { recursive: true, force: true });
-  if (process.argv.includes('--purge')) await rm(tokenPath, { force: true });
+  if (process.argv.includes('--purge')) {
+    await deletePersistentRelayRoom({ stateDir }).catch(() => false);
+    await Promise.all([
+      rm(tokenPath, { force: true }),
+      rm(e2eeClientsPath, { force: true }),
+      rm(relayIdentityPath, { force: true }),
+    ]);
+  }
   printCheck('Background service removed');
   if (!process.argv.includes('--purge')) {
     printWarning('Pairing key preserved', 'Use uninstall --purge to remove it too');
@@ -750,11 +864,17 @@ try {
     case 'pair':
       await showPairingQr();
       break;
+    case 'review-pair':
+      await showPairingQr({ review: true });
+      break;
     case 'status':
       await status();
       break;
     case 'restart':
       await restart();
+      break;
+    case 'revoke-all':
+      await revokeAll();
       break;
     case 'native':
       await nativeMode();

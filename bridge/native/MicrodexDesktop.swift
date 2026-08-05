@@ -1354,6 +1354,149 @@ func toggleDictation() throws {
     }
 }
 
+/// Reads the native ChatGPT Voice controls in one accessibility-tree pass.
+/// The phone never handles audio: it only clicks the controls shown by Codex
+/// on this Mac, so the conversation and microphone stay entirely local.
+func visibleVoiceSessionStatus() throws -> (active: Bool, muted: Bool) {
+    guard let app = runningChatGPT() else {
+        throw MicrodexDesktopError.chatGPTNotRunning
+    }
+    let accessibilityApp = accessibilityElement(for: app)
+    var queue: [(AXUIElement, Int)] = [(accessibilityApp, 0)]
+    var foundEndControl = false
+    var visited = 0
+
+    while !queue.isEmpty && visited < 8_000 {
+        let (element, depth) = queue.removeFirst()
+        visited += 1
+        if stringAttribute(element, kAXRoleAttribute) == kAXButtonRole,
+           hasVisibleFrame(element) {
+            let labels = [
+                stringAttribute(element, kAXTitleAttribute),
+                stringAttribute(element, kAXDescriptionAttribute),
+                stringAttribute(element, kAXValueAttribute),
+                stringAttribute(element, kAXHelpAttribute),
+            ].map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            if labels.contains("unmute microphone") { return (true, true) }
+            if labels.contains("mute microphone") { return (true, false) }
+            if labels.contains("end voice chat") { foundEndControl = true }
+        }
+        guard depth < 40,
+              let children = copyAttribute(element, kAXChildrenAttribute) as? [AXUIElement] else {
+            continue
+        }
+        queue.append(contentsOf: children.map { ($0, depth + 1) })
+    }
+    return (foundEndControl, false)
+}
+
+func firstVoiceButton(exactLabels labels: [String]) throws -> AXUIElement? {
+    for label in labels {
+        if let button = try findElement(
+            exactly: label,
+            role: kAXButtonRole,
+            activate: false
+        ) {
+            return button
+        }
+    }
+    return nil
+}
+
+func recordVoiceState(_ state: String, muted: Bool = false) {
+    actionDetails["voiceState"] = state
+    actionDetails["voiceMuted"] = muted
+}
+
+func startVoiceChat() throws {
+    _ = try activateChatGPT()
+    let current = try visibleVoiceSessionStatus()
+    if current.active {
+        recordVoiceState("active", muted: current.muted)
+        return
+    }
+
+    var startButton = try firstVoiceButton(
+        exactLabels: ["Start new voice chat", "Start voice chat"]
+    )
+    if startButton == nil {
+        // Native Voice starts from an empty Codex chat. If the current task has
+        // no Voice control, open one through the real application menu first.
+        try performApplicationMenuItem(exactly: "New Chat")
+        for _ in 0..<20 {
+            startButton = try firstVoiceButton(exactLabels: ["Start new voice chat"])
+            if startButton != nil { break }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+    }
+    guard let startButton else {
+        throw MicrodexDesktopError.invalidAction(
+            "Codex Voice Chat is not available in this desktop client"
+        )
+    }
+    try clickElement(startButton)
+
+    // First use can open the native voice chooser instead of starting the
+    // session immediately. Report that as setup so the phone gives an honest
+    // instruction rather than showing a false active state.
+    for _ in 0..<24 {
+        Thread.sleep(forTimeInterval: 0.125)
+        let next = try visibleVoiceSessionStatus()
+        if next.active {
+            recordVoiceState("active", muted: next.muted)
+            return
+        }
+        if try findElement(
+            matching: "Choose your voice",
+            activate: false
+        ) != nil {
+            recordVoiceState("setup")
+            return
+        }
+    }
+    recordVoiceState("launching")
+}
+
+func toggleVoiceMicrophone() throws {
+    _ = try activateChatGPT()
+    if let mute = try firstVoiceButton(exactLabels: ["Mute microphone"]) {
+        try clickElement(mute)
+        recordVoiceState("active", muted: true)
+        return
+    }
+    if let unmute = try firstVoiceButton(exactLabels: ["Unmute microphone"]) {
+        try clickElement(unmute)
+        recordVoiceState("active", muted: false)
+        return
+    }
+    throw MicrodexDesktopError.invalidAction(
+        "No active Codex Voice Chat is available to mute"
+    )
+}
+
+func endVoiceChat() throws {
+    _ = try activateChatGPT()
+    let current = try visibleVoiceSessionStatus()
+    guard current.active else {
+        recordVoiceState("inactive")
+        return
+    }
+    guard let endButton = try firstVoiceButton(exactLabels: ["End voice chat"]) else {
+        throw MicrodexDesktopError.invalidAction(
+            "The active Codex Voice Chat has no accessible End control"
+        )
+    }
+    try clickElement(endButton)
+    for _ in 0..<20 {
+        Thread.sleep(forTimeInterval: 0.1)
+        if try !visibleVoiceSessionStatus().active {
+            recordVoiceState("inactive")
+            return
+        }
+    }
+    throw MicrodexDesktopError.invalidAction("Codex Voice Chat did not end")
+}
+
 func execute(_ action: String, payload: String?) throws {
     switch action {
     case "fast":
@@ -1372,6 +1515,12 @@ func execute(_ action: String, payload: String?) throws {
         try startDictation()
     case "dictation-stop":
         try stopDictation()
+    case "voice-start":
+        try startVoiceChat()
+    case "voice-toggle-mute":
+        try toggleVoiceMicrophone()
+    case "voice-end":
+        try endVoiceChat()
     case "approve":
         _ = try activateChatGPT()
         postKey(CGKeyCode(kVK_Return))
@@ -1557,6 +1706,9 @@ do {
                 role: kAXButtonRole,
                 activate: false
             )) != nil
+        let voice = trusted && running
+            ? (try? visibleVoiceSessionStatus())
+            : nil
         // `windowTree` is the health flag: whether the web view exposes its
         // content at all. Without it every element lookup is a silent no-op.
         json([
@@ -1565,6 +1717,8 @@ do {
             "running": running,
             "windowTree": trusted && running && windowTreeReachable(),
             "working": working,
+            "voiceActive": voice?.active ?? false,
+            "voiceMuted": voice?.muted ?? false,
         ])
     } else if operation == "permission" {
         let trusted = accessibilityTrusted(prompt: true)

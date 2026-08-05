@@ -29,6 +29,9 @@ const ALLOWED_ACTIONS = new Set([
   'dictation',
   'dictation-start',
   'dictation-stop',
+  'voice-start',
+  'voice-toggle-mute',
+  'voice-end',
   'approve',
   'decline',
   'send',
@@ -82,6 +85,10 @@ const NO_WINDOW_TREE_ACTIONS = new Set([
   'bottom-panel',
   'pinned-summary',
   'find',
+  'menu-item',
+  'open-url',
+  'command-menu-open',
+  'command-menu-search',
 ]);
 
 let buildPromise;
@@ -236,5 +243,9 @@ export async function executeCodexDesktopAction(action, payload) {
 
   const args = ['action', action];
   if (payload !== undefined) args.push(String(payload));
-  return (await execute(args)).response;
+  const response = (await execute(args)).response;
+  // A desktop action may change Voice/working state immediately. Do not let
+  // the following remote-state read reuse the pre-action health snapshot.
+  statusCache = null;
+  return response;
 }

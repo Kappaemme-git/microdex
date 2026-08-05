@@ -1,6 +1,6 @@
 {
   "name": "microdex-cli",
-  "version": "0.1.12",
+  "version": "0.1.15",
   "description": "Local Mac bridge and pairing CLI for Microdex on iPhone.",
   "private": false,
   "type": "module",
@@ -15,6 +15,9 @@
     "bridge/scripts/microdex.mjs",
     "bridge/scripts/diagnose-desktop.mjs",
     "bridge/server.mjs",
+    "docs/APP_STORE_RELEASE.md",
+    "PRIVACY.md",
+    "SUPPORT.md",
     "README.md"
   ],
   "publishConfig": {
@@ -36,9 +39,10 @@
     "fast:status": "node bridge/scripts/set-fast.mjs status"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19"
   },
   "dependencies": {
+    "@noble/ciphers": "^2.2.0",
     "qrcode-terminal": "^0.12.0",
     "ws": "^8.21.1"
   }

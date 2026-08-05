@@ -7,6 +7,7 @@ export function attachRemoteEvents({
   server,
   codex,
   authenticate,
+  e2eeClients = null,
   pollIntervalMs = 750,
 }) {
   const sockets = new Set();
@@ -16,19 +17,31 @@ export function attachRemoteEvents({
   let pushAgain = false;
   let lastBroadcast = null;
 
+  function sendPayload(socket, payload) {
+    if (socket.readyState !== WebSocket.OPEN) return;
+    if (socket.microdexE2EEContext && e2eeClients) {
+      socket.send(JSON.stringify({
+        type: 'e2ee',
+        envelope: e2eeClients.sealEvent(socket.microdexE2EEContext, payload),
+      }));
+      return;
+    }
+    socket.send(JSON.stringify(payload));
+  }
+
   async function sendCurrentState(socket) {
     if (socket.readyState !== WebSocket.OPEN || !socket.microdexAuthenticated) return;
     try {
       const state = await codex.state();
       if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'state', state }));
+        sendPayload(socket, { type: 'state', state });
       }
     } catch (error) {
       if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
+        sendPayload(socket, {
           type: 'error',
           message: error?.message || 'Codex state is unavailable.',
-        }));
+        });
       }
     }
   }
@@ -46,7 +59,7 @@ export function attachRemoteEvents({
       lastBroadcast = message;
       for (const socket of sockets) {
         if (socket.microdexAuthenticated && socket.readyState === WebSocket.OPEN) {
-          socket.send(message);
+          sendPayload(socket, { type: 'state', state });
         }
       }
     } catch (error) {
@@ -56,7 +69,7 @@ export function attachRemoteEvents({
       });
       for (const socket of sockets) {
         if (socket.microdexAuthenticated && socket.readyState === WebSocket.OPEN) {
-          socket.send(message);
+          sendPayload(socket, JSON.parse(message));
         }
       }
     } finally {
@@ -92,6 +105,8 @@ export function attachRemoteEvents({
   webSockets.on('connection', (socket) => {
     sockets.add(socket);
     socket.microdexAuthenticated = false;
+    socket.microdexAuthenticating = false;
+    socket.microdexE2EEContext = null;
     socket.microdexAlive = true;
     const authTimer = setTimeout(() => socket.close(4401, 'Authentication required'), AUTH_TIMEOUT_MS);
 
@@ -99,20 +114,32 @@ export function attachRemoteEvents({
       socket.microdexAlive = true;
     });
     socket.on('message', (raw) => {
-      if (socket.microdexAuthenticated) return;
+      if (socket.microdexAuthenticated || socket.microdexAuthenticating) return;
+      socket.microdexAuthenticating = true;
+      void (async () => {
       try {
         const message = JSON.parse(raw.toString());
-        if (message.type !== 'auth' || !authenticate(message.token)) {
+        if (message.type === 'e2ee-auth' && e2eeClients) {
+          const context = await e2eeClients.openSessionMessage(message.envelope, 'events-auth');
+          if (context.payload.type !== 'events-auth') throw new Error('Invalid encrypted event request.');
+          socket.microdexE2EEContext = context;
+        } else if (message.type !== 'auth' || !authenticate(message.token)) {
           socket.close(4401, 'Invalid access code');
           return;
         }
         clearTimeout(authTimer);
         socket.microdexAuthenticated = true;
-        socket.send(JSON.stringify({ type: 'ready' }));
+        socket.send(JSON.stringify({
+          type: 'ready',
+          ...(socket.microdexE2EEContext ? { e2ee: true } : {}),
+        }));
         void sendCurrentState(socket);
       } catch {
-        socket.close(4400, 'Invalid message');
+        socket.close(4401, 'Invalid access code');
+      } finally {
+        socket.microdexAuthenticating = false;
       }
+      })();
     });
     socket.on('close', () => {
       clearTimeout(authTimer);

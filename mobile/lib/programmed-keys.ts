@@ -68,12 +68,25 @@ export const PROGRAMMABLE_COMMAND_IDS = [
   'workspace.find',
   'workspace.scheduled',
   'workspace.keyboardShortcuts',
+  'workspace.openBrowser',
+  'workspace.openSkills',
+  'workspace.openSideChat',
+  'workspace.runEnvironment',
   'composer.attachFiles',
   'composer.clear',
   'composer.openCommandMenu',
   'composer.openModelPicker',
   'thread.copyMarkdown',
   'thread.continueInWorktree',
+  'app.openSettings',
+  'app.openDocumentation',
+  'app.sendFeedback',
+  'app.openFolder',
+  'git.commit',
+  'git.createBranch',
+  'git.createDraftPullRequest',
+  'git.createPullRequest',
+  'git.mergePullRequest',
 ] as const;
 
 export type ProgrammableCommandId = (typeof PROGRAMMABLE_COMMAND_IDS)[number];
@@ -99,12 +112,10 @@ export const EMPTY_PROGRAMMED_KEYS: readonly null[] = Array.from(
 );
 
 /**
- * Codex Micro resolves a handful of printed caps to a built-in command, so a
- * cap dropped on a command slot works before the user assigns anything. Caps
- * that are absent here (GIT, YOLO, PR, …) genuinely do nothing until assigned.
- *
- * MIC has no command id on the hardware: it emits push-to-talk host messages.
- * `composer.startDictation` is the equivalent Microdex command.
+ * Official Codex Micro defaults extracted from the desktop keycap catalog.
+ * MIC is push-to-talk on hardware; Microdex uses `composer.startDictation`.
+ * YOLO / YEET insert the matching composer slash-text.
+ * Blank EMPT caps stay unassigned until the user programs them.
  */
 export const DEFAULT_KEYCAP_COMMANDS: Readonly<
   Partial<Record<MicroKeycapId, ProgrammableCommandId>>
@@ -115,6 +126,38 @@ export const DEFAULT_KEYCAP_COMMANDS: Readonly<
   SPLIT: 'forkThread',
   MIC: 'composer.startDictation',
   CODEX: 'composer.submit',
+  BUG: 'app.sendFeedback',
+  OAI: 'app.openDocumentation',
+  TERM: 'workspace.toggleTerminal',
+  DWN: 'thread.copyMarkdown',
+  DEL: 'chat.archive',
+  NEW: 'chat.new',
+  NAV: 'workspace.openBrowser',
+  MAGIC: 'workspace.togglePinnedSummary',
+  DIFF: 'workspace.toggleReviewPanel',
+  PLAY: 'workspace.runEnvironment',
+  GIT: 'git.commit',
+  BRCH: 'git.createDraftPullRequest',
+  BRANCH: 'git.createBranch',
+  MRG: 'git.mergePullRequest',
+  PR: 'git.createPullRequest',
+  PAINT: 'composer.attachFiles',
+  LAB: 'app.openSettings',
+  PARTY: 'workspace.openSideChat',
+  TIME: 'workspace.scheduled',
+  'MIND+': 'composer.increaseReasoningEffort',
+  'MIND-': 'composer.decreaseReasoningEffort',
+  SETUP: 'app.openSettings',
+  FOLD: 'app.openFolder',
+  UPL: 'composer.attachFiles',
+  APPS: 'workspace.openSkills',
+};
+
+export const DEFAULT_KEYCAP_PROMPTS: Readonly<
+  Partial<Record<MicroKeycapId, string>>
+> = {
+  YOLO: ':yolo:',
+  YEET: ':yeet:',
 };
 
 /** Slots ACT06, ACT07, ACT08, ACT09, ACT10_ACT11 and ACT12 of the shipped layout. */
@@ -134,7 +177,9 @@ export function defaultActionForKeycap(
   keycapId: MicroKeycapId,
 ): ProgrammedKeyAction | null {
   const commandId = DEFAULT_KEYCAP_COMMANDS[keycapId];
-  return commandId ? { type: 'command', commandId } : null;
+  if (commandId) return { type: 'command', commandId };
+  const prompt = DEFAULT_KEYCAP_PROMPTS[keycapId];
+  return prompt ? { type: 'prompt', text: prompt } : null;
 }
 
 export function defaultProgrammedKeys(): (ProgrammedKey | null)[] {
