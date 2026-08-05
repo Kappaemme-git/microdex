@@ -6,8 +6,11 @@ Work Louder.
 
 ## Get help
 
-For pairing, setup, controls, privacy, or deletion requests, open a support
-request in the public issue tracker:
+For pairing, setup, controls, privacy, or deletion requests, email:
+
+microdexsupport@gmail.com
+
+You can also open a support request in the public issue tracker:
 
 https://github.com/Kappaemme-git/microdex/issues/new
 
@@ -35,5 +38,6 @@ support are described in the privacy policy:
 
 https://github.com/Kappaemme-git/microdex/blob/main/PRIVACY.md
 
-Support is provided in English and Italian. Include the Microdex app version,
+Support is provided in English and Italian. When contacting
+microdexsupport@gmail.com, include the Microdex app version,
 bridge version, iOS version, and macOS version so the request can be reproduced.
