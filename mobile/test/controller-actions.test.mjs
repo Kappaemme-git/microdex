@@ -42,6 +42,10 @@ const skeuoSource = await readFile(
   new URL('../components/skeuo.tsx', import.meta.url),
   'utf8',
 );
+const shellPoolSource = skeuoSource.slice(
+  skeuoSource.indexOf('export function ShellPool'),
+  skeuoSource.indexOf('export function Screw'),
+);
 const commandGlyphSource = await readFile(
   new URL('../components/codex-command-glyph.tsx', import.meta.url),
   'utf8',
@@ -390,6 +394,12 @@ test('the device body keeps moulded-object proportions at any width', () => {
   assert.match(controllerSource, /<Screw style=\{styles\.screwTopLeft\} \/>/);
   assert.match(controllerSource, /<ShellPool \/>/);
   assert.doesNotMatch(controllerSource, /screwSlotH/);
+});
+
+test('the device light pool follows dark mode and fades before its rectangular bounds', () => {
+  assert.match(shellPoolSource, /const dark = theme\.mode === 'dark'/);
+  assert.match(shellPoolSource, /cy="48%" r="52%"/);
+  assert.match(shellPoolSource, /offset="0\.82"[^>]*stopOpacity=\{0\}/s);
 });
 
 test('chat rows reveal archive on a left swipe and projects can be archived safely', () => {

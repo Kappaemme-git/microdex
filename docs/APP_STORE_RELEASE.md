@@ -55,9 +55,9 @@ https://developer.apple.com/app-store/app-privacy-details/
 
 ## Reviewer access
 
-- Confirm **Try Demo** opens from the first screen with no account, QR, Mac, or
+- Confirm **Explore demo** opens from the first screen with no account, QR, Mac, or
   consent and that every displayed task is fictional.
-- Put the exact demo path in App Review notes: **Open app → Try Demo**.
+- Put the exact demo path in App Review notes: **Open app → Explore demo**.
 - If Apple needs the real integration, follow
   [APP_REVIEW_RUNBOOK.md](APP_REVIEW_RUNBOOK.md) and attach a fresh private QR.
 - Unless Apple has approved demo-only review in advance, keep the dedicated

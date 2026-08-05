@@ -315,13 +315,14 @@ function shellGeometry(width: number, fallbackRadius: number) {
  * instead of a card pasted onto the background.
  */
 export function ShellPool({ style }: { style?: StyleProp<ViewStyle> }) {
-  const dark = useSkeuo().plate === '#1A1A18';
+  const { theme } = useTheme();
+  const dark = theme.mode === 'dark';
 
   return (
     <View pointerEvents="none" style={[styles.pool, style]}>
       <Svg width="100%" height="100%">
         <Defs>
-          <RadialGradient id="shellPool" cx="50%" cy="42%" r="62%">
+          <RadialGradient id="shellPool" cx="50%" cy="48%" r="52%">
             <Stop
               offset="0"
               stopColor={dark ? '#FFFFFF' : '#8898A4'}
@@ -332,6 +333,7 @@ export function ShellPool({ style }: { style?: StyleProp<ViewStyle> }) {
               stopColor={dark ? '#FFFFFF' : '#8898A4'}
               stopOpacity={dark ? 0.03 : 0.08}
             />
+            <Stop offset="0.82" stopColor={dark ? '#FFFFFF' : '#8898A4'} stopOpacity={0} />
             <Stop offset="1" stopColor={dark ? '#FFFFFF' : '#8898A4'} stopOpacity={0} />
           </RadialGradient>
         </Defs>

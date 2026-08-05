@@ -24,8 +24,10 @@ const reviewRunbook = await readFile(
 );
 
 test('App Review can open a local demo containing only fictional tasks', () => {
-  assert.match(controllerSource, /Try Demo/);
+  assert.match(controllerSource, /Explore demo/);
   assert.match(controllerSource, /enterDemo/);
+  assert.doesNotMatch(controllerSource, /gateBrandBar/);
+  assert.match(controllerSource, /<Text style=\{styles\.gateTitle\}>Control Codex<\/Text>/);
   assert.match(demoSource, /Microdex Demo/);
   assert.match(demoSource, /Release Demo/);
   assert.doesNotMatch(demoSource, /Kappaemme|francesco|mistero/i);
@@ -54,7 +56,7 @@ test('Settings exposes privacy, support, licenses, about, and app version', () =
 });
 
 test('the release uses an original Microdex icon and independent positioning', () => {
-  assert.equal(appConfig.expo.icon, './assets/images/icon-microdex.png');
+  assert.equal(appConfig.expo.icon, './assets/images/icon-microdex-faceplate-fullbleed.png');
   assert.equal(appConfig.expo.ios.supportsTablet, false);
   assert.match(controllerSource, /independent open-source companion/i);
   assert.match(controllerSource, /not affiliated with or endorsed by OpenAI or Work Louder/i);

@@ -2267,15 +2267,14 @@ export default function ControllerScreen() {
         )}
         {!status ? (
           <View style={styles.connectionGate}>
-            <View style={[styles.gateBrandBar, { paddingTop: Math.max(insets.top, 14) }]}>
-              <View style={styles.gateBrandMark}><MicrodexMark size={24} /></View>
-              <Text style={styles.gateBrandName}>Microdex</Text>
-            </View>
             <ScrollView
               style={styles.screenBody}
               contentContainerStyle={[
                 styles.connectionGateContent,
-                { paddingBottom: Math.max(insets.bottom, 24) },
+                {
+                  paddingTop: Math.max(insets.top + 32, 56),
+                  paddingBottom: Math.max(insets.bottom, 24),
+                },
               ]}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}>
@@ -2336,17 +2335,6 @@ export default function ControllerScreen() {
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Try Microdex demo without a Mac"
-                    onPress={() => void enterDemo()}
-                    style={({ pressed }) => [
-                      styles.gateSecondaryButton,
-                      pressed && styles.gateButtonPressed,
-                    ]}>
-                    <MaterialCommunityIcons name="play-outline" size={18} color={theme.text} />
-                    <Text style={styles.gateSecondaryButtonText}>Try Demo</Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
                     onPress={() => void forgetPairedMac()}
                     style={({ pressed }) => [
                       styles.gateTertiaryButton,
@@ -2396,7 +2384,7 @@ export default function ControllerScreen() {
                       <View style={styles.gateStepCopy}>
                         <Text style={styles.gateStepTitle}>Play with the keyboard</Text>
                         <Text style={styles.gateStepBody}>
-                          Twelve keys, a joystick and a dial control your Mac. Or explore everything safely in Demo first.
+                          Twelve keys, a joystick and a dial control your Mac. Or explore the demo first.
                         </Text>
 
                         <View style={styles.gateKeyPreview}>
@@ -2427,14 +2415,14 @@ export default function ControllerScreen() {
 
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Try Microdex demo without a Mac"
+                    accessibilityLabel="Explore Microdex demo without a Mac"
                     onPress={() => void enterDemo()}
                     style={({ pressed }) => [
-                      styles.gateSecondaryButton,
+                      styles.gateDemoButton,
                       pressed && styles.gateButtonPressed,
                     ]}>
-                    <MaterialCommunityIcons name="play-outline" size={18} color={theme.text} />
-                    <Text style={styles.gateSecondaryButtonText}>Try Demo</Text>
+                    <MaterialCommunityIcons name="play-outline" size={15} color={theme.textMuted} />
+                    <Text style={styles.gateDemoButtonText}>Explore demo</Text>
                   </Pressable>
 
                   <Text style={styles.gateFootnote}>
@@ -3849,28 +3837,6 @@ function createStyles(theme: ThemePalette) {
     connectionGateContent: {
       flexGrow: 1,
       paddingHorizontal: 24,
-      paddingTop: 44,
-    },
-    gateBrandBar: {
-      paddingHorizontal: 24,
-      paddingBottom: 14,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 9,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: theme.divider,
-    },
-    gateBrandMark: {
-      width: 24,
-      height: 24,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    gateBrandName: {
-      fontFamily: Fonts.sansSemi,
-      fontSize: 15,
-      letterSpacing: -0.3,
-      color: theme.text,
     },
     gateContent: {
       width: '100%', maxWidth: 430, alignSelf: 'stretch',
@@ -4052,6 +4018,21 @@ function createStyles(theme: ThemePalette) {
       fontSize: 15,
       letterSpacing: -0.2,
       color: theme.text,
+    },
+    gateDemoButton: {
+      alignSelf: 'center',
+      minHeight: 44,
+      marginTop: 8,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 7,
+    },
+    gateDemoButtonText: {
+      fontFamily: Fonts.sansMedium,
+      fontSize: 13,
+      color: theme.textMuted,
     },
     gateTertiaryButton: {
       height: 44, marginTop: 4, alignItems: 'center', justifyContent: 'center',

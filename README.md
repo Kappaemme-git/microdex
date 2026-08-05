@@ -71,7 +71,7 @@ automatically when you log into the Mac. The saved pairing reconnects whenever
 the Mac is awake and online, even if the phone switches between Wi-Fi and
 mobile data.
 
-Before pairing, **Try Demo** opens a completely local walkthrough with fictional
+Before pairing, **Explore demo** opens a completely local walkthrough with fictional
 tasks. It never contacts a Mac, Cloudflare, Codex, or OpenAI. The real pairing
 flow asks the user to review and accept the data-processing explanation before
 any command or message can leave the phone.
@@ -124,7 +124,7 @@ Use `microdex native status`, `microdex native test`, or
 
 ## App Review access
 
-The native **Try Demo** path lets a reviewer exercise the interface immediately
+The native **Explore demo** path lets a reviewer exercise the interface immediately
 without credentials or external hardware. To let App Review verify the full
 Mac-to-phone path, prepare a dedicated clean review Mac and run:
 

@@ -4,7 +4,7 @@
     "slug": "microcodex",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon-microdex.png",
+    "icon": "./assets/images/icon-microdex-faceplate-fullbleed.png",
     "scheme": "microdex",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -42,14 +42,14 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/icon-microdex.png"
+      "favicon": "./assets/images/icon-microdex-faceplate-fullbleed.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/icon-microdex.png",
+          "image": "./assets/images/icon-microdex-faceplate-fullbleed.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#FFFFFF",
