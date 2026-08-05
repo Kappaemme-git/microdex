@@ -53,7 +53,7 @@ import {
   ReasoningEffort,
   bridgeEventAuthentication,
   bridgeEventsUrl,
-  bridgeRequest,
+  bridgeRequest as realBridgeRequest,
   inferBridgeUrl,
   isBridgeAuthError,
   isBridgeConnectionError,
@@ -62,6 +62,11 @@ import {
   registerBridgeEncryption,
   resetEncryptedBridgeSession,
 } from '@/lib/bridge';
+import {
+  createDemoRemoteState,
+  createDemoStatus,
+  respondToDemoRequest,
+} from '@/lib/demo';
 import {
   type E2EEKeyMaterial,
   normalizeE2EEKeyMaterial,
@@ -97,6 +102,12 @@ const STATUS_ICON: Partial<Record<AgentStatusKey, CentralIconName>> = {
 
 type JoystickDirection = 'up' | 'right' | 'down' | 'left';
 type EncoderMode = 'reasoning' | 'composer-navigation' | 'conversation-scroll';
+type InfoSheet = 'about' | 'privacy' | 'support' | 'licenses';
+type ConsentContinuation = 'scanner' | 'pairing' | null;
+type BridgeRequestOptions = {
+  method?: 'GET' | 'POST';
+  body?: Record<string, unknown>;
+};
 type Styles = ReturnType<typeof createStyles>;
 
 const STORAGE_URL = 'microdex.bridge.url';
@@ -105,6 +116,17 @@ const STORAGE_E2EE = 'microdex.bridge.e2ee.v1';
 const STORAGE_PROGRAMMED_KEYS = 'microdex.programmable.keys.v2';
 const STORAGE_LEGACY_PROGRAMMED_KEYS = 'microdex.programmable.keys.v1';
 const STORAGE_ENCODER_MODE = 'microdex.encoder.mode.v1';
+const STORAGE_AI_CONSENT = 'microdex.ai-data-consent.v1';
+const AI_CONSENT_VERSION = '2026-08-05';
+const PROJECT_BRANCH_URL =
+  'https://github.com/Kappaemme-git/microdex/tree/codex/voice-mode-official-icons';
+const PRIVACY_URL =
+  'https://github.com/Kappaemme-git/microdex/blob/codex/voice-mode-official-icons/PRIVACY.md';
+const SUPPORT_URL = 'https://github.com/Kappaemme-git/microdex/issues';
+const LICENSE_URL =
+  'https://github.com/Kappaemme-git/microdex/blob/codex/voice-mode-official-icons/LICENSE';
+const THIRD_PARTY_LICENSE_URL =
+  'https://github.com/Kappaemme-git/microdex/blob/codex/voice-mode-official-icons/bridge/native-shim/THIRD_PARTY_LICENSE.txt';
 const EXPO_BRIDGE_TOKEN = __DEV__
   ? process.env.EXPO_PUBLIC_MICRODEX_TOKEN?.trim() ?? ''
   : '';
@@ -131,80 +153,11 @@ const VISUAL_PREVIEW =
   __DEV__ &&
   Platform.OS === 'web' &&
   new URLSearchParams(globalThis.location?.search ?? '').get('preview') === '1';
-const VISUAL_PREVIEW_REMOTE: RemoteState = {
-  online: true,
-  selectedThreadId: 'preview-thinking',
-  selected: {
-    id: 'preview-thinking',
-    name: 'Build Microdex lighting',
-    task: 'Faithful Codex Micro controller',
-    project: 'Microdex',
-    status: 'thinking',
-    updatedAt: Date.now(),
-    fastMode: true,
-    reasoningEffort: 'high',
-    supportedReasoningEfforts: FALLBACK_EFFORTS,
-  },
-  threads: [
-    {
-      id: 'preview-thinking',
-      name: 'Build Microdex lighting',
-      task: 'Faithful Codex Micro controller',
-      project: 'Microdex',
-      status: 'thinking',
-      updatedAt: Date.now(),
-      fastMode: true,
-      reasoningEffort: 'high',
-      supportedReasoningEfforts: FALLBACK_EFFORTS,
-    },
-    {
-      id: 'preview-complete',
-      name: 'Pairing CLI',
-      task: 'Test pairing',
-      project: 'Microdex',
-      status: 'complete',
-      updatedAt: Date.now() - 1_000,
-      fastMode: false,
-      reasoningEffort: 'medium',
-      supportedReasoningEfforts: FALLBACK_EFFORTS,
-    },
-    {
-      id: 'preview-waiting',
-      name: 'TestFlight',
-      task: 'Needs confirmation',
-      project: 'Microdex',
-      status: 'waiting',
-      updatedAt: Date.now() - 2_000,
-      fastMode: false,
-      reasoningEffort: 'medium',
-      supportedReasoningEfforts: FALLBACK_EFFORTS,
-    },
-  ],
-  messageQueue: [],
-  pendingApproval: null,
-  actionAvailability: {},
-  voice: { state: 'inactive', muted: false },
-};
-const VISUAL_PREVIEW_STATUS: BridgeStatus = {
-  connected: true,
-  bridge: { name: 'Microdex Preview', version: 'dev', protocolVersion: 3 },
-  capabilities: {
-    verifiedSettings: true,
-    remoteChat: true,
-    taskControl: true,
-    programmableActions: MICRO_ACTIONS.length,
-    programmableAssignments: true,
-    encoderModes: true,
-    desktopAutomation: true,
-    actionAvailability: true,
-    visibleDesktopRouting: true,
-  },
-  fastMode: true,
-  reasoningEffort: 'high',
-  configPath: 'preview',
-  platform: 'web',
-  remote: VISUAL_PREVIEW_REMOTE,
-};
+const VISUAL_PREVIEW_REMOTE = createDemoRemoteState();
+const VISUAL_PREVIEW_STATUS = createDemoStatus(
+  VISUAL_PREVIEW_REMOTE,
+  MICRO_ACTIONS.length,
+);
 
 function readableError(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong.';
@@ -284,12 +237,60 @@ function GuideItem({
   );
 }
 
+function MicrodexMark({ size = 24 }: { size?: number }) {
+  const padding = size * 0.18;
+  const gap = size * 0.075;
+  const keyWidth = (size - (padding * 2) - gap) / 2;
+  const keyHeight = (size - (padding * 2) - (gap * 2)) / 3;
+
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size * 0.28,
+        backgroundColor: '#0A0A0A',
+        padding,
+      }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}>
+        {Array.from({ length: 6 }, (_, index) => (
+          <View
+            key={index}
+            style={{
+              width: keyWidth,
+              height: keyHeight,
+              borderRadius: Math.max(1, size * 0.045),
+              backgroundColor: '#F7F7F3',
+              opacity: index === 5 ? 0.82 : 1,
+            }}
+          />
+        ))}
+      </View>
+      <View
+        style={{
+          position: 'absolute',
+          right: size * 0.095,
+          bottom: size * 0.17,
+          width: size * 0.37,
+          height: Math.max(1, size * 0.055),
+          borderRadius: size,
+          backgroundColor: '#F7F7F3',
+          transform: [{ rotate: '-43deg' }],
+        }}
+      />
+    </View>
+  );
+}
+
 export default function ControllerScreen() {
   const { theme, mode, setMode } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const skeuo = useSkeuo();
   const statusMeta = useMemo(() => statusTone(theme), [theme]);
   const insets = useSafeAreaInsets();
+  const [demoMode, setDemoMode] = useState(VISUAL_PREVIEW);
   const [bridgeUrl, setBridgeUrl] = useState(inferBridgeUrl());
   const [token, setToken] = useState(EXPO_BRIDGE_TOKEN);
   const [e2ee, setE2ee] = useState<E2EEKeyMaterial | null>(null);
@@ -310,6 +311,11 @@ export default function ControllerScreen() {
   const liveStatusPulse = useRef(new Animated.Value(0.62)).current;
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [scannerVisible, setScannerVisible] = useState(false);
+  const [consentVisible, setConsentVisible] = useState(false);
+  const [consentContinuation, setConsentContinuation] =
+    useState<ConsentContinuation>(null);
+  const [aiConsent, setAiConsent] = useState(VISUAL_PREVIEW);
+  const [infoSheet, setInfoSheet] = useState<InfoSheet | null>(null);
   const [commandCopied, setCommandCopied] = useState(false);
   const commandCopiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -344,12 +350,22 @@ export default function ControllerScreen() {
   const reconnectAttempt = useRef(0);
   const connectionInFlight = useRef(false);
   const pairingInFlight = useRef(false);
+  const pendingPairingCode = useRef<string | null>(null);
+  const aiConsentRef = useRef(VISUAL_PREVIEW);
+  const remoteRef = useRef<RemoteState | null>(
+    VISUAL_PREVIEW ? VISUAL_PREVIEW_REMOTE : null,
+  );
   /** Pairing link already attempted, so an incoming link is claimed once only. */
   const handledPairingUrl = useRef<string | null>(null);
   /** Set when the Mac rejected the saved credential, which stops the retry loop. */
   const credentialRejected = useRef(false);
   const incomingUrl = Linking.useLinkingURL();
   const networkState = Network.useNetworkState();
+  const appInfo = useMemo(() => mobileAppInfo(), []);
+
+  useEffect(() => {
+    remoteRef.current = remote;
+  }, [remote]);
 
   const activeAgent = remote?.selected ?? {
     id: '0', name: 'No task selected', task: 'Connect to Codex App Server', status: 'idle' as const,
@@ -434,6 +450,35 @@ export default function ControllerScreen() {
     setNoticeError(isError);
   }, []);
 
+  const bridgeRequest = useCallback(async <T,>(
+    candidateUrl: string,
+    candidateToken: string,
+    path: string,
+    options: BridgeRequestOptions = {},
+    candidateE2EE?: E2EEKeyMaterial | null,
+  ): Promise<T> => {
+    if (!demoMode) {
+      return realBridgeRequest<T>(
+        candidateUrl,
+        candidateToken,
+        path,
+        options,
+        candidateE2EE,
+      );
+    }
+
+    const current = remoteRef.current ?? createDemoRemoteState();
+    if (path === '/api/status') {
+      return createDemoStatus(current, MICRO_ACTIONS.length) as T;
+    }
+    if (path === '/api/remote/state') return current as T;
+
+    const result = respondToDemoRequest(current, path, options.body);
+    remoteRef.current = result.remote;
+    setRemote(result.remote);
+    return result.response as T;
+  }, [demoMode]);
+
   const tryOpenChatFromSwipe = useCallback(() => {
     if (!status) {
       setSettingsVisible(true);
@@ -479,6 +524,7 @@ export default function ControllerScreen() {
         savedKeys,
         savedLegacyKeys,
         savedEncoderMode,
+        savedConsent,
       ] = await Promise.all([
         readStoredValue(STORAGE_URL),
         readStoredValue(STORAGE_TOKEN),
@@ -486,6 +532,7 @@ export default function ControllerScreen() {
         readStoredValue(STORAGE_PROGRAMMED_KEYS),
         readStoredValue(STORAGE_LEGACY_PROGRAMMED_KEYS),
         readStoredValue(STORAGE_ENCODER_MODE),
+        readStoredValue(STORAGE_AI_CONSENT),
       ]);
       if (savedUrl && !EXPO_BRIDGE_TOKEN) setBridgeUrl(savedUrl);
       if (EXPO_BRIDGE_TOKEN) setToken(EXPO_BRIDGE_TOKEN);
@@ -517,6 +564,9 @@ export default function ControllerScreen() {
       ) {
         setEncoderMode(savedEncoderMode);
       }
+      const consentAccepted = savedConsent === AI_CONSENT_VERSION;
+      aiConsentRef.current = consentAccepted;
+      setAiConsent(consentAccepted);
       setCredentialsReady(true);
     })();
   }, []);
@@ -626,10 +676,14 @@ export default function ControllerScreen() {
       handleActionError(error);
       return false;
     }
-  }, [bridgeUrl, handleActionError, status, token]);
+  }, [bridgeRequest, bridgeUrl, handleActionError, status, token]);
 
   useEffect(() => {
-    if (VISUAL_PREVIEW) return;
+    if (demoMode) return;
+    if (!aiConsent) {
+      setLiveChannel('offline');
+      return;
+    }
     if (!status) {
       setLiveChannel('offline');
       return;
@@ -718,7 +772,7 @@ export default function ControllerScreen() {
       stopFallback();
       socket?.close();
     };
-  }, [announce, bridgeUrl, e2ee, refreshRemote, status, token]);
+  }, [aiConsent, announce, bridgeUrl, demoMode, e2ee, refreshRemote, status, token]);
 
   const connectToBridge = useCallback(async (
     candidateUrl: string,
@@ -726,6 +780,14 @@ export default function ControllerScreen() {
     interactive = false,
     candidateE2EE: E2EEKeyMaterial | null = e2ee,
   ) => {
+    if (!demoMode && !aiConsentRef.current) {
+      if (interactive) {
+        setConsentContinuation(null);
+        setConsentVisible(true);
+        announce('Review and accept data processing before reconnecting.');
+      }
+      return false;
+    }
     if (!candidateUrl.trim() || !candidateToken.trim()) {
       if (interactive) announce('Enter the bridge address and access code.', true);
       return false;
@@ -795,9 +857,9 @@ export default function ControllerScreen() {
       setBridgeConnecting(false);
       if (interactive) setLoadingAction(null);
     }
-  }, [announce, e2ee]);
+  }, [announce, bridgeRequest, demoMode, e2ee]);
 
-  const acceptPairingCode = useCallback(async (value: string) => {
+  const claimPairingCode = useCallback(async (value: string) => {
     if (pairingInFlight.current) return;
     pairingInFlight.current = true;
     // A fresh QR is exactly what clears a previously rejected credential.
@@ -833,7 +895,7 @@ export default function ControllerScreen() {
     }
   }, [announce, connectToBridge]);
 
-  const openPairingScanner = useCallback(async () => {
+  const presentPairingScanner = useCallback(async () => {
     if (Platform.OS === 'web') {
       announce('QR pairing is available on iPhone and Android.', true);
       return;
@@ -849,6 +911,136 @@ export default function ControllerScreen() {
     setSettingsVisible(false);
     setTimeout(() => setScannerVisible(true), Platform.OS === 'ios' ? 320 : 0);
   }, [announce, cameraPermission, requestCameraPermission]);
+
+  const openPairingScanner = useCallback(async () => {
+    if (!aiConsent) {
+      pendingPairingCode.current = null;
+      setConsentContinuation('scanner');
+      setConsentVisible(true);
+      announce('Review how Codex and OpenAI process content before pairing.');
+      return;
+    }
+    await presentPairingScanner();
+  }, [aiConsent, announce, presentPairingScanner]);
+
+  const acceptPairingCode = useCallback(async (value: string) => {
+    if (!aiConsent) {
+      setScannerVisible(false);
+      pendingPairingCode.current = value;
+      setConsentContinuation('pairing');
+      setConsentVisible(true);
+      announce('Pairing paused until you review data processing.');
+      return;
+    }
+    await claimPairingCode(value);
+  }, [aiConsent, announce, claimPairingCode]);
+
+  const acceptAiConsent = useCallback(async () => {
+    const continuation = consentContinuation;
+    const pairingCode = pendingPairingCode.current;
+    pendingPairingCode.current = null;
+    await writeStoredValue(STORAGE_AI_CONSENT, AI_CONSENT_VERSION);
+    aiConsentRef.current = true;
+    setAiConsent(true);
+    setConsentVisible(false);
+    setConsentContinuation(null);
+    announce('Data-processing consent saved. You can revoke it in Settings.');
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    if (continuation === 'scanner') {
+      await presentPairingScanner();
+    } else if (continuation === 'pairing' && pairingCode) {
+      await claimPairingCode(pairingCode);
+    }
+  }, [announce, claimPairingCode, consentContinuation, presentPairingScanner]);
+
+  const declineAiConsent = useCallback(() => {
+    pendingPairingCode.current = null;
+    setConsentContinuation(null);
+    setConsentVisible(false);
+    announce(
+      aiConsent
+        ? 'Data-processing consent remains enabled.'
+        : 'Nothing was shared. You can review this choice again when you pair or use a control.',
+    );
+  }, [aiConsent, announce]);
+
+  const revokeAiConsent = useCallback(() => {
+    Alert.alert(
+      'Revoke data-processing consent?',
+      'Microdex will keep the saved Mac pairing, but every live control will remain blocked until you consent again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Revoke',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              await deleteStoredValue(STORAGE_AI_CONSENT);
+              aiConsentRef.current = false;
+              setAiConsent(false);
+              setStatus(null);
+              setRemote(null);
+              setLiveChannel('offline');
+              setSettingsVisible(false);
+              announce('Consent revoked. No new content will be sent through Microdex.');
+              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            })();
+          },
+        },
+      ],
+    );
+  }, [announce]);
+
+  const openExternal = useCallback(async (url: string, label: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      announce(`${label} could not be opened. Try again when you are online.`, true);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+  }, [announce]);
+
+  const showInfoSheet = useCallback((sheet: InfoSheet) => {
+    setSettingsVisible(false);
+    setTimeout(() => setInfoSheet(sheet), Platform.OS === 'ios' ? 320 : 0);
+  }, []);
+
+  const reviewAiConsent = useCallback(() => {
+    setSettingsVisible(false);
+    setConsentContinuation(null);
+    setTimeout(() => setConsentVisible(true), Platform.OS === 'ios' ? 320 : 0);
+  }, []);
+
+  const enterDemo = useCallback(async () => {
+    const demoRemote = createDemoRemoteState();
+    remoteRef.current = demoRemote;
+    setDemoMode(true);
+    setStatus(createDemoStatus(demoRemote, MICRO_ACTIONS.length));
+    setRemote(demoRemote);
+    setLiveChannel('live');
+    setSettingsVisible(false);
+    setScannerVisible(false);
+    setInfoSheet(null);
+    announce('Local demo active. Every task and command here is fictional.');
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [announce]);
+
+  const exitDemo = useCallback(async () => {
+    remoteRef.current = null;
+    setDemoMode(false);
+    setStatus(null);
+    setRemote(null);
+    setLiveChannel('offline');
+    setSettingsVisible(false);
+    setInfoSheet(null);
+    announce('Demo closed. Pair your Mac to control the real Codex app.');
+    await Haptics.selectionAsync();
+  }, [announce]);
+
+  const leaveDemoAndPair = useCallback(() => {
+    void exitDemo().then(() => openPairingScanner());
+  }, [exitDemo, openPairingScanner]);
 
   const copyInstallCommand = useCallback(async () => {
     await Clipboard.setStringAsync('npx microdex-cli@latest setup');
@@ -914,6 +1106,7 @@ export default function ControllerScreen() {
     await Haptics.selectionAsync();
   }, [
     announce,
+    bridgeRequest,
     bridgeUrl,
     networkState.isConnected,
     networkState.type,
@@ -927,11 +1120,14 @@ export default function ControllerScreen() {
       deleteStoredValue(STORAGE_URL),
       deleteStoredValue(STORAGE_TOKEN),
       deleteStoredValue(STORAGE_E2EE),
+      deleteStoredValue(STORAGE_AI_CONSENT),
     ]);
     registerBridgeEncryption(bridgeUrl, null);
     setBridgeUrl(inferBridgeUrl());
     setToken('');
     setE2ee(null);
+    aiConsentRef.current = false;
+    setAiConsent(false);
     setStatus(null);
     setRemote(null);
     setSettingsVisible(false);
@@ -960,6 +1156,7 @@ export default function ControllerScreen() {
   useEffect(() => {
     if (
       !credentialsReady ||
+      !aiConsent ||
       status ||
       !bridgeUrl.trim() ||
       !token.trim() ||
@@ -984,6 +1181,7 @@ export default function ControllerScreen() {
     };
   }, [
     bridgeUrl,
+    aiConsent,
     connectToBridge,
     credentialsReady,
     networkState.isConnected,
@@ -994,21 +1192,29 @@ export default function ControllerScreen() {
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active' && !status) {
+      if (nextState === 'active' && aiConsent && !status) {
         reconnectAttempt.current = 0;
         void connectToBridge(bridgeUrl, token);
       }
     });
     return () => subscription.remove();
-  }, [bridgeUrl, connectToBridge, status, token]);
+  }, [aiConsent, bridgeUrl, connectToBridge, status, token]);
 
   const requireBridge = useCallback(() => {
+    if (!demoMode && !aiConsent) {
+      pendingPairingCode.current = null;
+      setConsentContinuation(null);
+      setConsentVisible(true);
+      announce('Review and accept data processing before using live Mac controls.');
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return false;
+    }
     if (status) return true;
     setSettingsVisible(true);
     announce('Connect the bridge running on your computer first.', true);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     return false;
-  }, [announce, status]);
+  }, [aiConsent, announce, demoMode, status]);
 
   const requireVerifiedSettings = useCallback(() => {
     if (
@@ -1097,6 +1303,7 @@ export default function ControllerScreen() {
   }, [
     activeThread,
     announce,
+    bridgeRequest,
     bridgeUrl,
     flashHardwareFeedback,
     handleActionError,
@@ -1160,6 +1367,7 @@ export default function ControllerScreen() {
     [
       activeThread,
       announce,
+      bridgeRequest,
       bridgeUrl,
       effortIndex,
       flashHardwareFeedback,
@@ -1219,6 +1427,7 @@ export default function ControllerScreen() {
         }
       });
   }, [
+    bridgeRequest,
     bridgeUrl,
     encoderMode,
     flashHardwareFeedback,
@@ -1286,6 +1495,7 @@ export default function ControllerScreen() {
     }
   }, [
     announce,
+    bridgeRequest,
     bridgeUrl,
     flashHardwareFeedback,
     handleActionError,
@@ -1337,6 +1547,7 @@ export default function ControllerScreen() {
       });
   }, [
     announce,
+    bridgeRequest,
     bridgeUrl,
     flashHardwareFeedback,
     handleActionError,
@@ -1426,6 +1637,7 @@ export default function ControllerScreen() {
     }
   }, [
     announce,
+    bridgeRequest,
     bridgeUrl,
     flashHardwareFeedback,
     handleActionError,
@@ -1464,6 +1676,7 @@ export default function ControllerScreen() {
     }
   }, [
     announce,
+    bridgeRequest,
     bridgeUrl,
     flashHardwareFeedback,
     handleActionError,
@@ -1517,6 +1730,7 @@ export default function ControllerScreen() {
   }, [
     activeThread?.id,
     announce,
+    bridgeRequest,
     bridgeUrl,
     closeChatSwitcher,
     handleActionError,
@@ -1599,7 +1813,7 @@ export default function ControllerScreen() {
         },
       ],
     );
-  }, [announce, bridgeUrl, handleActionError, requireBridge, token]);
+  }, [announce, bridgeRequest, bridgeUrl, handleActionError, requireBridge, token]);
 
   const openKeyEditor = useCallback((slotIndex: number) => {
     const current = programmedKeys[slotIndex];
@@ -1825,6 +2039,7 @@ export default function ControllerScreen() {
   }, [
     activeThread,
     announce,
+    bridgeRequest,
     bridgeUrl,
     draft,
     handleActionError,
@@ -1858,7 +2073,7 @@ export default function ControllerScreen() {
     } finally {
       setLoadingAction(null);
     }
-  }, [announce, bridgeUrl, handleActionError, requireBridge, token]);
+  }, [announce, bridgeRequest, bridgeUrl, handleActionError, requireBridge, token]);
 
   const handleJoystickDirection = useCallback(async (direction: JoystickDirection) => {
     const actionId = {
@@ -2053,9 +2268,7 @@ export default function ControllerScreen() {
         {!status ? (
           <View style={styles.connectionGate}>
             <View style={[styles.gateBrandBar, { paddingTop: Math.max(insets.top, 14) }]}>
-              <View style={styles.gateBrandMark}>
-                <CodexMicroGlyph keycapId="CODEX" size={13} color={theme.bg} />
-              </View>
+              <View style={styles.gateBrandMark}><MicrodexMark size={24} /></View>
               <Text style={styles.gateBrandName}>Microdex</Text>
             </View>
             <ScrollView
@@ -2085,7 +2298,7 @@ export default function ControllerScreen() {
                     <Text style={styles.gateTitleMono}>bridge not reachable</Text>
                   </View>
                   <Text style={styles.gateNote}>
-                    Open Codex, then run the Microdex bridge on the Mac you paired with.
+                    Wake your Mac and open Codex. The background bridge reconnects automatically.
                   </Text>
 
                   <View style={styles.gateCommandRow}>
@@ -2123,6 +2336,17 @@ export default function ControllerScreen() {
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
+                    accessibilityLabel="Try Microdex demo without a Mac"
+                    onPress={() => void enterDemo()}
+                    style={({ pressed }) => [
+                      styles.gateSecondaryButton,
+                      pressed && styles.gateButtonPressed,
+                    ]}>
+                    <MaterialCommunityIcons name="play-outline" size={18} color={theme.text} />
+                    <Text style={styles.gateSecondaryButtonText}>Try Demo</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
                     onPress={() => void forgetPairedMac()}
                     style={({ pressed }) => [
                       styles.gateTertiaryButton,
@@ -2144,7 +2368,7 @@ export default function ControllerScreen() {
                       <View style={styles.gateStepCopy}>
                         <Text style={styles.gateStepTitle}>Start the Mac bridge</Text>
                         <Text style={styles.gateStepBody}>
-                          Paste this in Terminal and leave the window open.
+                          Run this once on a Mac with Codex signed in. Setup installs an automatic background bridge, so Terminal can close after pairing.
                         </Text>
 
                         <View style={styles.gateCommandRow}>
@@ -2172,7 +2396,7 @@ export default function ControllerScreen() {
                       <View style={styles.gateStepCopy}>
                         <Text style={styles.gateStepTitle}>Play with the keyboard</Text>
                         <Text style={styles.gateStepBody}>
-                          Twelve keys, a joystick and a dial to drive Codex.
+                          Twelve keys, a joystick and a dial control your Mac. Or explore everything safely in Demo first.
                         </Text>
 
                         <View style={styles.gateKeyPreview}>
@@ -2201,7 +2425,21 @@ export default function ControllerScreen() {
                     <Text style={styles.gatePrimaryButtonText}>Scan pairing code</Text>
                   </Pressable>
 
-                  <Text style={styles.gateFootnote}>Login and projects stay on your Mac</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Try Microdex demo without a Mac"
+                    onPress={() => void enterDemo()}
+                    style={({ pressed }) => [
+                      styles.gateSecondaryButton,
+                      pressed && styles.gateButtonPressed,
+                    ]}>
+                    <MaterialCommunityIcons name="play-outline" size={18} color={theme.text} />
+                    <Text style={styles.gateSecondaryButtonText}>Try Demo</Text>
+                  </Pressable>
+
+                  <Text style={styles.gateFootnote}>
+                    Requires macOS, Codex signed in, Node.js 20.19+ and internet. Login and projects stay on your Mac.
+                  </Text>
                 </View>
               )}
             </ScrollView>
@@ -2315,7 +2553,7 @@ export default function ControllerScreen() {
             <Text style={styles.frameMarkTop} pointerEvents="none">↑</Text>
             <View style={styles.sideLabelLeftWrap} pointerEvents="none">
               <Text style={styles.sideLabelLeft} numberOfLines={1}>
-                WORK LOUDER | OPENAI 2026
+                MICRODEX · INDEPENDENT COMPANION · 2026
               </Text>
             </View>
             <View style={styles.sideLabelRightWrap} pointerEvents="none">
@@ -3022,8 +3260,8 @@ export default function ControllerScreen() {
                 styles={styles}
                 theme={theme}
                 icon="label-outline"
-                title="Official keycaps"
-                body="Every printed cap from the tray has its official Codex default: GIT commits, PR opens a pull request, YOLO inserts :yolo:, and so on. You can still reassign any slot."
+                title="Codex Micro keycaps"
+                body="The licensed keycap artwork keeps its familiar default: GIT commits, PR opens a pull request, YOLO inserts :yolo:, and so on. Microdex remains an independent companion and every slot can be reassigned."
               />
 
               <View style={styles.guideSectionIntro}>
@@ -3219,18 +3457,346 @@ export default function ControllerScreen() {
                 </Pressable>
               </View>
 
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void forgetPairedMac()}
-                style={({ pressed }) => [
-                  styles.settingsDangerLink,
-                  pressed && styles.gateButtonPressed,
-                ]}>
-                <Text style={styles.settingsDangerLinkText}>Forget this Mac</Text>
-              </Pressable>
+              <View style={styles.settingsGroup}>
+                <Text style={styles.settingsGroupLabel}>Review & Demo</Text>
+                <Text style={styles.settingsSupportingText}>
+                  Demo runs entirely on this device with fictional tasks. It never contacts a Mac, Cloudflare or OpenAI.
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => void (demoMode ? exitDemo() : enterDemo())}
+                  style={({ pressed }) => [
+                    styles.settingsLinkRow,
+                    pressed && styles.settingsLinkRowPressed,
+                  ]}>
+                  <Text style={styles.settingsLinkTitle}>
+                    {demoMode ? 'Exit local demo' : 'Try local demo'}
+                  </Text>
+                  <MaterialCommunityIcons
+                    name={demoMode ? 'exit-to-app' : 'play-outline'}
+                    size={18}
+                    color={theme.textFaint}
+                  />
+                </Pressable>
+                {demoMode ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={leaveDemoAndPair}
+                    style={({ pressed }) => [
+                      styles.settingsLinkRow,
+                      pressed && styles.settingsLinkRowPressed,
+                    ]}>
+                    <Text style={styles.settingsLinkTitle}>Pair a real Mac</Text>
+                    <CentralIcon name="qrCode" size={16} color={theme.textFaint} />
+                  </Pressable>
+                ) : null}
+              </View>
+
+              <View style={styles.settingsGroup}>
+                <Text style={styles.settingsGroupLabel}>Privacy & Support</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => showInfoSheet('privacy')}
+                  style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
+                  <Text style={styles.settingsLinkTitle}>Privacy Policy</Text>
+                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={reviewAiConsent}
+                  style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
+                  <View>
+                    <Text style={styles.settingsLinkTitle}>AI data processing</Text>
+                    <Text style={styles.settingsLinkMeta}>
+                      {aiConsent ? 'Consent enabled' : 'Not enabled'}
+                    </Text>
+                  </View>
+                  <View style={[
+                    styles.consentStatusDot,
+                    { backgroundColor: aiConsent ? theme.online : theme.textFaint },
+                  ]} />
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => showInfoSheet('support')}
+                  style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
+                  <Text style={styles.settingsLinkTitle}>Support</Text>
+                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => showInfoSheet('licenses')}
+                  style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
+                  <Text style={styles.settingsLinkTitle}>Licenses & Attributions</Text>
+                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => showInfoSheet('about')}
+                  style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
+                  <View>
+                    <Text style={styles.settingsLinkTitle}>About Microdex</Text>
+                    <Text style={styles.settingsLinkMeta}>
+                      Version {appInfo.version} ({appInfo.buildNumber})
+                    </Text>
+                  </View>
+                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
+                </Pressable>
+              </View>
+
+              {!demoMode ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => void forgetPairedMac()}
+                  style={({ pressed }) => [
+                    styles.settingsDangerLink,
+                    pressed && styles.gateButtonPressed,
+                  ]}>
+                  <Text style={styles.settingsDangerLinkText}>Forget this Mac and consent</Text>
+                </Pressable>
+              ) : null}
             </ScrollView>
           </DismissibleSheet>
         </KeyboardAvoidingView>
+        </GestureHandlerRootView>
+      </Modal>
+
+      <Modal
+        visible={consentVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={declineAiConsent}>
+        <GestureHandlerRootView style={styles.modalGestureRoot}>
+          <View style={styles.modalBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={declineAiConsent} />
+            <DismissibleSheet
+              open={consentVisible}
+              onDismiss={declineAiConsent}
+              style={[
+                styles.sheet,
+                styles.consentSheet,
+                { paddingBottom: Math.max(insets.bottom, 18) + 12 },
+              ]}
+              header={
+                <>
+                  <SheetHandlePill color={theme.borderStrong} />
+                  <View style={styles.sheetTitleRow}>
+                    <View style={styles.consentTitleCopy}>
+                      <Text style={styles.sheetKicker}>YOUR DATA, YOUR CHOICE</Text>
+                      <Text style={styles.sheetTitle}>How live controls process content</Text>
+                    </View>
+                    <Pressable
+                      accessibilityLabel="Close data processing information"
+                      onPress={declineAiConsent}
+                      style={styles.closeButton}>
+                      <CentralIcon name="close" size={19} color={theme.text} />
+                    </Pressable>
+                  </View>
+                </>
+              }>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <Text style={styles.consentLead}>
+                  Microdex sends only the commands and messages you choose through your paired Mac.
+                </Text>
+                <View style={styles.consentPoint}>
+                  <Text style={styles.consentPointNumber}>01</Text>
+                  <Text style={styles.consentPointText}>
+                    Content is encrypted between this iPhone and your Mac. The Cloudflare relay carries ciphertext and cannot read it.
+                  </Text>
+                </View>
+                <View style={styles.consentPoint}>
+                  <Text style={styles.consentPointNumber}>02</Text>
+                  <Text style={styles.consentPointText}>
+                    When you send text or start Voice Chat, Codex and OpenAI process that content under the OpenAI account already signed in on your Mac.
+                  </Text>
+                </View>
+                <View style={styles.consentPoint}>
+                  <Text style={styles.consentPointNumber}>03</Text>
+                  <Text style={styles.consentPointText}>
+                    Microdex never receives your OpenAI password. Phone audio is not captured; Voice Chat and dictation remain on the Mac.
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityRole="link"
+                  onPress={() => void openExternal(PRIVACY_URL, 'Privacy Policy')}
+                  style={({ pressed }) => [
+                    styles.inlineLink,
+                    pressed && styles.settingsLinkRowPressed,
+                  ]}>
+                  <Text style={styles.inlineLinkText}>Read the full Privacy Policy</Text>
+                  <CentralIcon name="link" size={16} color={theme.textMuted} />
+                </Pressable>
+              </ScrollView>
+              <View style={styles.consentButtons}>
+                {aiConsent ? (
+                  <>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={declineAiConsent}
+                      style={({ pressed }) => [
+                        styles.consentSecondaryButton,
+                        pressed && styles.gateButtonPressed,
+                      ]}>
+                      <Text style={styles.consentSecondaryButtonText}>KEEP ENABLED</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => {
+                        setConsentVisible(false);
+                        revokeAiConsent();
+                      }}
+                      style={({ pressed }) => [
+                        styles.consentDangerButton,
+                        pressed && styles.gateButtonPressed,
+                      ]}>
+                      <Text style={styles.consentDangerButtonText}>REVOKE</Text>
+                    </Pressable>
+                  </>
+                ) : (
+                  <>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={declineAiConsent}
+                      style={({ pressed }) => [
+                        styles.consentSecondaryButton,
+                        pressed && styles.gateButtonPressed,
+                      ]}>
+                      <Text style={styles.consentSecondaryButtonText}>NOT NOW</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => void acceptAiConsent()}
+                      style={({ pressed }) => [
+                        styles.consentPrimaryButton,
+                        pressed && styles.gateButtonPressed,
+                      ]}>
+                      <Text style={styles.consentPrimaryButtonText}>CONTINUE</Text>
+                      <CentralIcon name="check" size={18} color={theme.bg} />
+                    </Pressable>
+                  </>
+                )}
+              </View>
+            </DismissibleSheet>
+          </View>
+        </GestureHandlerRootView>
+      </Modal>
+
+      <Modal
+        visible={infoSheet !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInfoSheet(null)}>
+        <GestureHandlerRootView style={styles.modalGestureRoot}>
+          <View style={styles.modalBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setInfoSheet(null)} />
+            <DismissibleSheet
+              open={infoSheet !== null}
+              onDismiss={() => setInfoSheet(null)}
+              style={[
+                styles.sheet,
+                styles.infoSheet,
+                { paddingBottom: Math.max(insets.bottom, 18) + 12 },
+              ]}
+              header={
+                <>
+                  <SheetHandlePill color={theme.borderStrong} />
+                  <View style={styles.sheetTitleRow}>
+                    <View>
+                      <Text style={styles.sheetKicker}>MICRODEX</Text>
+                      <Text style={styles.sheetTitle}>
+                        {infoSheet === 'privacy'
+                          ? 'Privacy Policy'
+                          : infoSheet === 'support'
+                            ? 'Support'
+                            : infoSheet === 'licenses'
+                              ? 'Licenses & Attributions'
+                              : 'About Microdex'}
+                      </Text>
+                    </View>
+                    <Pressable
+                      accessibilityLabel="Close information"
+                      onPress={() => setInfoSheet(null)}
+                      style={styles.closeButton}>
+                      <CentralIcon name="close" size={19} color={theme.text} />
+                    </Pressable>
+                  </View>
+                </>
+              }>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {infoSheet === 'privacy' ? (
+                  <>
+                    <Text style={styles.infoLead}>Private by architecture, not by promise.</Text>
+                    <Text style={styles.infoParagraph}>
+                      Pairing secrets stay in the iOS Keychain and on your Mac. Live content is end-to-end encrypted through the relay. Camera frames are used only to scan the QR and are never saved or uploaded.
+                    </Text>
+                    <Text style={styles.infoParagraph}>
+                      Codex and OpenAI process only the content you intentionally send under the account on your Mac. You can revoke consent here, forget this Mac, or run microdex revoke-all on macOS.
+                    </Text>
+                    <Pressable
+                      accessibilityRole="link"
+                      onPress={() => void openExternal(PRIVACY_URL, 'Privacy Policy')}
+                      style={({ pressed }) => [styles.infoAction, pressed && styles.gateButtonPressed]}>
+                      <Text style={styles.infoActionText}>OPEN FULL POLICY</Text>
+                      <CentralIcon name="link" size={17} color={theme.bg} />
+                    </Pressable>
+                  </>
+                ) : infoSheet === 'support' ? (
+                  <>
+                    <Text style={styles.infoLead}>Need help with pairing or a control?</Text>
+                    <Text style={styles.infoParagraph}>
+                      Copy Diagnostics from Settings and include the failed button name. The report contains versions and connection state, but never your bridge token or encryption key.
+                    </Text>
+                    <Pressable
+                      accessibilityRole="link"
+                      onPress={() => void openExternal(SUPPORT_URL, 'Microdex Support')}
+                      style={({ pressed }) => [styles.infoAction, pressed && styles.gateButtonPressed]}>
+                      <Text style={styles.infoActionText}>OPEN SUPPORT</Text>
+                      <CentralIcon name="link" size={17} color={theme.bg} />
+                    </Pressable>
+                  </>
+                ) : infoSheet === 'licenses' ? (
+                  <>
+                    <Text style={styles.infoLead}>Open source, with attribution.</Text>
+                    <Text style={styles.infoParagraph}>
+                      Microdex is distributed under the MIT License. The optional Native Micro channel contains MIT-licensed work with its original notices. Codex Micro keycap artwork is included with permission and remains the property of its respective rights holders.
+                    </Text>
+                    <Pressable
+                      accessibilityRole="link"
+                      onPress={() => void openExternal(LICENSE_URL, 'Microdex License')}
+                      style={({ pressed }) => [styles.infoSecondaryAction, pressed && styles.gateButtonPressed]}>
+                      <Text style={styles.infoSecondaryActionText}>MICRODEX LICENSE</Text>
+                      <CentralIcon name="link" size={16} color={theme.text} />
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="link"
+                      onPress={() => void openExternal(THIRD_PARTY_LICENSE_URL, 'Third-party licenses')}
+                      style={({ pressed }) => [styles.infoSecondaryAction, pressed && styles.gateButtonPressed]}>
+                      <Text style={styles.infoSecondaryActionText}>THIRD-PARTY NOTICES</Text>
+                      <CentralIcon name="link" size={16} color={theme.text} />
+                    </Pressable>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.aboutMark}><MicrodexMark size={64} /></View>
+                    <Text style={styles.infoLead}>An independent remote for your own Mac.</Text>
+                    <Text style={styles.infoParagraph}>
+                      Microdex is an independent open-source companion. It is not affiliated with or endorsed by OpenAI or Work Louder. Codex access is not included and every real action executes on a user-owned Mac.
+                    </Text>
+                    <Text style={styles.infoVersion}>
+                      APP {appInfo.version} ({appInfo.buildNumber}) · {demoMode ? 'LOCAL DEMO' : `BRIDGE ${status?.bridge?.version ?? 'OFFLINE'}`}
+                    </Text>
+                    <Pressable
+                      accessibilityRole="link"
+                      onPress={() => void openExternal(PROJECT_BRANCH_URL, 'Microdex repository')}
+                      style={({ pressed }) => [styles.infoAction, pressed && styles.gateButtonPressed]}>
+                      <Text style={styles.infoActionText}>OPEN SOURCE REPOSITORY</Text>
+                      <CentralIcon name="link" size={17} color={theme.bg} />
+                    </Pressable>
+                  </>
+                )}
+              </ScrollView>
+            </DismissibleSheet>
+          </View>
         </GestureHandlerRootView>
       </Modal>
 
@@ -3297,8 +3863,6 @@ function createStyles(theme: ThemePalette) {
     gateBrandMark: {
       width: 24,
       height: 24,
-      borderRadius: 7,
-      backgroundColor: theme.text,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -3811,6 +4375,8 @@ function createStyles(theme: ThemePalette) {
       backgroundColor: theme.surface, borderTopWidth: 1, borderColor: theme.border,
     },
     settingsSheet: { maxHeight: '88%' },
+    consentSheet: { maxHeight: '92%' },
+    infoSheet: { maxHeight: '86%' },
     settingsContent: { paddingTop: 4, paddingBottom: 8 },
     catalogSheet: { maxHeight: '92%' },
     keyManagerSheet: { maxHeight: '88%' },
@@ -3830,6 +4396,86 @@ function createStyles(theme: ThemePalette) {
     sheetBody: {
       marginTop: 10, marginBottom: 12, fontSize: 14, lineHeight: 21,
       letterSpacing: -0.15, color: theme.textMuted,
+    },
+    consentTitleCopy: { flex: 1, paddingRight: 14 },
+    consentLead: {
+      marginTop: 18, marginBottom: 18, fontFamily: Fonts.sansSemi,
+      fontSize: 17, lineHeight: 24, letterSpacing: -0.3, color: theme.text,
+    },
+    consentPoint: {
+      paddingVertical: 14, borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: theme.divider, flexDirection: 'row', alignItems: 'flex-start', gap: 13,
+    },
+    consentPointNumber: {
+      width: 24, paddingTop: 2, fontFamily: Fonts.mono, fontSize: 10,
+      letterSpacing: 0.5, color: theme.textFaint,
+    },
+    consentPointText: {
+      flex: 1, fontFamily: Fonts.sans, fontSize: 13.5, lineHeight: 20,
+      letterSpacing: -0.1, color: theme.textMuted,
+    },
+    inlineLink: {
+      minHeight: 44, marginTop: 6, paddingVertical: 11,
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    },
+    inlineLinkText: {
+      fontFamily: Fonts.sansSemi, fontSize: 13.5, color: theme.text,
+      textDecorationLine: 'underline',
+    },
+    consentButtons: {
+      paddingTop: 14, flexDirection: 'row', gap: 10,
+      borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.divider,
+    },
+    consentSecondaryButton: {
+      flex: 1, height: 50, borderRadius: 14, borderWidth: 1,
+      borderColor: theme.borderStrong, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: theme.surface,
+    },
+    consentSecondaryButtonText: {
+      fontFamily: Fonts.sansSemi, fontSize: 11, letterSpacing: 0.7, color: theme.textMuted,
+    },
+    consentDangerButton: {
+      flex: 1, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: theme.dangerSurface, borderWidth: 1, borderColor: theme.danger,
+    },
+    consentDangerButtonText: {
+      fontFamily: Fonts.sansSemi, fontSize: 11, letterSpacing: 0.7, color: theme.dangerText,
+    },
+    consentPrimaryButton: {
+      flex: 1.2, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+      flexDirection: 'row', gap: 8, backgroundColor: theme.text,
+    },
+    consentPrimaryButtonText: {
+      fontFamily: Fonts.sansSemi, fontSize: 11, letterSpacing: 0.7, color: theme.bg,
+    },
+    infoLead: {
+      marginTop: 18, fontFamily: Fonts.sansSemi, fontSize: 18,
+      lineHeight: 24, letterSpacing: -0.35, color: theme.text,
+    },
+    infoParagraph: {
+      marginTop: 14, fontFamily: Fonts.sans, fontSize: 13.5,
+      lineHeight: 21, letterSpacing: -0.12, color: theme.textMuted,
+    },
+    infoAction: {
+      minHeight: 50, marginTop: 22, borderRadius: 14, paddingHorizontal: 16,
+      backgroundColor: theme.text, flexDirection: 'row', alignItems: 'center',
+      justifyContent: 'center', gap: 9,
+    },
+    infoActionText: {
+      fontFamily: Fonts.sansSemi, fontSize: 11, letterSpacing: 0.65, color: theme.bg,
+    },
+    infoSecondaryAction: {
+      minHeight: 48, marginTop: 10, borderRadius: 14, paddingHorizontal: 15,
+      borderWidth: 1, borderColor: theme.borderStrong, flexDirection: 'row',
+      alignItems: 'center', justifyContent: 'space-between',
+    },
+    infoSecondaryActionText: {
+      fontFamily: Fonts.sansSemi, fontSize: 11, letterSpacing: 0.55, color: theme.text,
+    },
+    aboutMark: { marginTop: 20, alignSelf: 'flex-start' },
+    infoVersion: {
+      marginTop: 18, fontFamily: Fonts.mono, fontSize: 10.5,
+      lineHeight: 16, letterSpacing: 0.35, color: theme.textFaint,
     },
     cliCommand: {
       minHeight: 48, marginBottom: 14, paddingHorizontal: 14, borderRadius: 14,
@@ -4078,6 +4724,10 @@ function createStyles(theme: ThemePalette) {
       color: theme.textFaint,
       marginBottom: 10,
     },
+    settingsSupportingText: {
+      marginTop: -3, marginBottom: 7, fontFamily: Fonts.sans,
+      fontSize: 12.5, lineHeight: 18, color: theme.textMuted,
+    },
     settingsCommandRow: {
       minHeight: 44,
       paddingLeft: 12,
@@ -4174,6 +4824,10 @@ function createStyles(theme: ThemePalette) {
       letterSpacing: -0.2,
       color: theme.text,
     },
+    settingsLinkMeta: {
+      marginTop: 3, fontFamily: Fonts.sans, fontSize: 11.5, color: theme.textFaint,
+    },
+    consentStatusDot: { width: 8, height: 8, borderRadius: 4 },
     settingsDangerLink: {
       marginTop: 4,
       height: 44,

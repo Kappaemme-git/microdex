@@ -27,6 +27,7 @@ import {
   requestNativeShim,
 } from '../lib/native-shim-client.mjs';
 import { deletePersistentRelayRoom } from '../lib/remote-relay.mjs';
+import { REVIEW_PAIRING_TTL_MS } from '../lib/pairing-session.mjs';
 
 const VERSION = BRIDGE_VERSION;
 const DEFAULT_PORT = 3210;
@@ -75,6 +76,7 @@ function printHelp() {
   ${ui.bold('Usage')}
     microdex setup      Install the background bridge and pair
     microdex pair       Show a fresh pairing QR
+    microdex review-pair Show a single-use App Review QR (7 days)
     microdex status     Check the background bridge
     microdex restart    Restart the background bridge
     microdex revoke-all Revoke every paired phone and rotate the access key
@@ -450,7 +452,7 @@ async function nativeMode() {
   console.log(`\n  ${ui.dim('Use “microdex native stop” to return to normal Codex mode.')}\n`);
 }
 
-async function requestPairingDetails() {
+async function requestPairingDetails({ review = false } = {}) {
   const port = Number(process.env.MICRODEX_PORT || DEFAULT_PORT);
   const token = await persistentToken();
   const response = await fetch(`http://127.0.0.1:${port}/api/pair/new`, {
@@ -460,6 +462,7 @@ async function requestPairingDetails() {
       'Content-Type': 'application/json',
       'X-Microdex-Token': token,
     },
+    body: JSON.stringify({ mode: review ? 'review' : 'standard' }),
   });
   const payload = await response.json();
   if (!response.ok || !payload.pairingUrl) {
@@ -468,14 +471,22 @@ async function requestPairingDetails() {
       'The running bridge is outdated. Stop it with Control-C, then run setup again.',
     );
   }
+  if (review && payload.mode !== 'review') {
+    throw new Error(
+      'The running bridge does not support App Review pairing yet. Run microdex setup with this CLI version first.',
+    );
+  }
   return payload;
 }
 
-async function waitForRemotePairingDetails(timeoutMs = 90_000) {
+async function waitForRemotePairingDetails(
+  timeoutMs = 90_000,
+  { review = false } = {},
+) {
   const startedAt = Date.now();
   let latest = null;
   while (Date.now() - startedAt < timeoutMs) {
-    latest = await requestPairingDetails();
+    latest = await requestPairingDetails({ review });
     // Older bridge builds do not report tunnel state. Preserve their local QR
     // behavior instead of making the updated CLI wait forever.
     if (!latest.remoteAccess || latest.remoteAccess.ready) return latest;
@@ -485,7 +496,7 @@ async function waitForRemotePairingDetails(timeoutMs = 90_000) {
   return latest;
 }
 
-async function showPairingQr({ header = true } = {}) {
+async function showPairingQr({ header = true, review = false } = {}) {
   if (!await bridgeHealth()) {
     throw new Error('The Microdex background bridge is offline. Run microdex setup first.');
   }
@@ -493,7 +504,7 @@ async function showPairingQr({ header = true } = {}) {
   printCheck('Background bridge', 'Running automatically');
   console.log('');
   printStep(1, 'Preparing secure connection', 'No shared Wi-Fi required');
-  const details = await waitForRemotePairingDetails();
+  const details = await waitForRemotePairingDetails(90_000, { review });
   if (details.remoteAccess?.ready) {
     printCheck(
       'Remote access',
@@ -507,13 +518,20 @@ async function showPairingQr({ header = true } = {}) {
       details.remoteAccess?.error || 'The fallback QR requires the same Wi-Fi',
     );
   }
-  printStep(2, 'Open Microdex and tap Scan pairing QR');
+  printStep(
+    2,
+    review
+      ? 'Attach this QR privately to the App Review notes'
+      : 'Open Microdex and tap Scan pairing QR',
+  );
   printQr(details.pairingUrl, qrcode);
   console.log(`  ${ui.dim(`Can't scan? ${details.pairingUrl}`)}`);
   console.log(`  ${ui.dim(
-    details.remoteAccess?.ready
-      ? 'One-time QR · expires in 10 minutes · encrypted connection'
-      : 'One-time QR · expires in 10 minutes · local network fallback',
+    review
+      ? `Single-use reviewer QR · expires in ${Math.round(REVIEW_PAIRING_TTL_MS / 86_400_000)} days · revoke after review`
+      : details.remoteAccess?.ready
+        ? 'One-time QR · expires in 10 minutes · encrypted connection'
+        : 'One-time QR · expires in 10 minutes · local network fallback',
   )}\n`);
 }
 
@@ -845,6 +863,9 @@ try {
       break;
     case 'pair':
       await showPairingQr();
+      break;
+    case 'review-pair':
+      await showPairingQr({ review: true });
       break;
     case 'status':
       await status();

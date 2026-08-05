@@ -35,6 +35,15 @@ test('a running background bridge can issue a fresh one-time pairing QR', () => 
   assert.match(serverSource, /pairingSession = new PairingSession/);
 });
 
+test('App Review pairing is explicit, long enough for review, and still single-use', () => {
+  assert.match(cliSource, /case 'review-pair'/);
+  assert.match(cliSource, /showPairingQr\(\{ review: true \}\)/);
+  assert.match(cliSource, /payload\.mode !== 'review'/);
+  assert.match(serverSource, /body\.mode === 'review'/);
+  assert.match(serverSource, /REVIEW_PAIRING_TTL_MS/);
+  assert.match(serverSource, /singleUse: true/);
+});
+
 test('pairing prefers a persistent relay and keeps Quick Tunnel as a fallback', () => {
   assert.match(serverSource, /createRemoteRelay/);
   assert.match(serverSource, /createRemoteTunnel/);

@@ -71,6 +71,11 @@ automatically when you log into the Mac. The saved pairing reconnects whenever
 the Mac is awake and online, even if the phone switches between Wi-Fi and
 mobile data.
 
+Before pairing, **Try Demo** opens a completely local walkthrough with fictional
+tasks. It never contacts a Mac, Cloudflare, Codex, or OpenAI. The real pairing
+flow asks the user to review and accept the data-processing explanation before
+any command or message can leave the phone.
+
 You can check a Mac before pairing with `microdex doctor`, or see whether the
 bridge is already active with `microdex status`. Use `microdex pair` for a fresh
 one-time QR and `microdex restart` if the background service needs restarting.
@@ -117,6 +122,23 @@ Use `microdex native status`, `microdex native test`, or
 
 ---
 
+## App Review access
+
+The native **Try Demo** path lets a reviewer exercise the interface immediately
+without credentials or external hardware. To let App Review verify the full
+Mac-to-phone path, prepare a dedicated clean review Mac and run:
+
+```bash
+microdex review-pair
+```
+
+This creates a private, single-use encrypted pairing QR that expires after seven
+days. Attach it only in App Store Connect review notes, keep that Mac awake and
+online during review, and run `microdex revoke-all` when review finishes. See
+[docs/APP_REVIEW_RUNBOOK.md](docs/APP_REVIEW_RUNBOOK.md) for the complete flow.
+
+---
+
 ## 🔗 How it connects to Codex
 
 The CLI does not ask for OpenAI credentials and does not sign in as the user.
@@ -156,6 +178,7 @@ node bridge/scripts/set-fast.mjs on --config /tmp/microdex-test-config.toml
 
 - Every bridge action requires an authenticated credential stored with mode `0600` in `~/.microdex/access-token`.
 - The QR contains a separate one-time pairing code, expires after 10 minutes, and cannot be reused after a successful claim.
+- `microdex review-pair` is an explicit App Review exception: its QR expires after seven days but remains single-use and is invalidated by a bridge restart or `revoke-all`.
 - Every new pairing creates a separate 256-bit end-to-end encryption key. The key is carried in the QR URL fragment, which is not sent to the relay.
 - Commands, messages, task state, the persistent bridge credential, and live events are encrypted between the phone and Mac with authenticated XChaCha20-Poly1305. Cloudflare relays ciphertext and cannot decrypt their contents.
 - The persistent bridge credential and encryption key are returned only inside the encrypted pairing exchange and are stored in the iOS Keychain by the app.

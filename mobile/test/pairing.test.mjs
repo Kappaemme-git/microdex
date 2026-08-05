@@ -189,8 +189,8 @@ test('the browser pairing deep link resolves to an existing Expo Router screen',
 });
 
 test('a recognized QR closes the scanner before the network claim can fail', () => {
-  const start = controllerSource.indexOf('const acceptPairingCode');
-  const end = controllerSource.indexOf('const openPairingScanner', start);
+  const start = controllerSource.indexOf('const claimPairingCode');
+  const end = controllerSource.indexOf('const presentPairingScanner', start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
   const handler = controllerSource.slice(start, end);

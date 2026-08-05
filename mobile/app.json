@@ -4,7 +4,7 @@
     "slug": "microcodex",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/icon-microdex.png",
     "scheme": "microdex",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -16,7 +16,7 @@
       "policy": "appVersion"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "cc.microdex.app",
       "buildNumber": "1",
       "infoPlist": {
@@ -42,14 +42,14 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/icon-microdex.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/icon-microdex.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#FFFFFF",

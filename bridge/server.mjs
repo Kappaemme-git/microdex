@@ -31,7 +31,10 @@ import {
 } from './lib/programmed-actions.mjs';
 import { attachRemoteEvents } from './lib/remote-events.mjs';
 import { RemoteMessageQueue } from './lib/remote-message-queue.mjs';
-import { PairingSession } from './lib/pairing-session.mjs';
+import {
+  PairingSession,
+  REVIEW_PAIRING_TTL_MS,
+} from './lib/pairing-session.mjs';
 import {
   E2EEAuthenticationError,
   E2EEClientRegistry,
@@ -71,6 +74,7 @@ const remoteAccessEnabled = process.env.MICRODEX_REMOTE_ACCESS !== '0';
 const quickTunnelEnabled =
   remoteAccessEnabled && process.env.MICRODEX_QUICK_TUNNEL === '1';
 let pairingSession = new PairingSession({ accessToken });
+let pairingMode = 'standard';
 const e2eeClients = new E2EEClientRegistry({ stateDir: microdexHome });
 const stableRelay = createRemoteRelay({
   port,
@@ -486,6 +490,8 @@ function pairingDetails() {
     pairingUrl: urls[0],
     pairingUrls: urls,
     expiresAt: pairingSession.expiresAt,
+    mode: pairingMode,
+    singleUse: true,
     remoteAccess: {
       status: remoteTunnelState.status,
       ready: remoteTunnelState.ready,
@@ -601,7 +607,16 @@ if(fragment.get('e2ee')==='1'&&fragment.get('keyId')&&fragment.get('key')){const
     }
 
     if (request.method === 'POST' && url.pathname === '/api/pair/new') {
-      pairingSession = new PairingSession({ accessToken });
+      const body = await readBody(request);
+      const mode = body.mode === 'review' ? 'review' : 'standard';
+      if (body.mode && !['standard', 'review'].includes(body.mode)) {
+        return sendJson(response, 400, { error: 'Invalid pairing mode.' });
+      }
+      pairingMode = mode;
+      pairingSession = new PairingSession({
+        accessToken,
+        ttlMs: mode === 'review' ? REVIEW_PAIRING_TTL_MS : undefined,
+      });
       return sendJson(response, 200, pairingDetails());
     }
 

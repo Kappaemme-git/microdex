@@ -3,6 +3,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createE2EEKeyMaterial, normalizeE2EEKeyMaterial } from './e2ee.mjs';
 
 export const DEFAULT_PAIRING_TTL_MS = 10 * 60 * 1000;
+export const REVIEW_PAIRING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function secretMatches(expected, provided = '') {
   const expectedBuffer = Buffer.from(expected);

@@ -52,3 +52,18 @@ https://developer.apple.com/app-store/app-privacy-details/
    audit, secret scan, and `npm pack --dry-run`.
 7. Review App Store screenshots, support URL, privacy URL, export compliance,
    and the privacy nutrition label before submission.
+
+## Reviewer access
+
+- Confirm **Try Demo** opens from the first screen with no account, QR, Mac, or
+  consent and that every displayed task is fictional.
+- Put the exact demo path in App Review notes: **Open app → Try Demo**.
+- If Apple needs the real integration, follow
+  [APP_REVIEW_RUNBOOK.md](APP_REVIEW_RUNBOOK.md) and attach a fresh private QR.
+- Unless Apple has approved demo-only review in advance, keep the dedicated
+  review Mac online and provide the real QR in addition to the built-in demo.
+- Never submit a personal bridge token, OpenAI password, or encryption key as
+  text. The QR is the only reviewer credential and remains single-use.
+- After review, run `microdex revoke-all` and shut down the dedicated review Mac.
+- Attach written authorization for any third-party keycap artwork in App Store
+  Connect and explain the independent branding in Review Notes.
