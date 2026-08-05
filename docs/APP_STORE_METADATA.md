@@ -58,6 +58,10 @@ affiliated with or endorsed by OpenAI or Work Louder.
 
 https://github.com/Kappaemme-git/microdex/blob/main/SUPPORT.md
 
+**Support email**
+
+microdexsupport@gmail.com
+
 **Privacy Policy URL**
 
 https://github.com/Kappaemme-git/microdex/blob/main/PRIVACY.md
@@ -140,7 +144,8 @@ OpenAI behavior in effect on submission day.
 - Exact CLI, bridge, relay Worker, app version, and build number.
 - Written authorization for third-party keycap artwork.
 - Written authorization or terms evidence for the Codex integration.
-- App Review contact name, phone number, and email in App Store Connect.
+- App Review contact name and phone number in App Store Connect; use
+  microdexsupport@gmail.com as the review contact email.
 
 ## Release controls
 

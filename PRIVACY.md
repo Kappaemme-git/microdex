@@ -68,7 +68,8 @@ durable relay room.
 ## Contact and changes
 
 Support requests, privacy questions, and deletion requests can be submitted
-through the public support channels listed here:
+by email to microdexsupport@gmail.com or through the public support channels
+listed here:
 https://github.com/Kappaemme-git/microdex/blob/main/SUPPORT.md
 
 Material changes to this policy will be published in the repository with an

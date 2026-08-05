@@ -50,7 +50,8 @@ https://developer.apple.com/app-store/app-privacy-details/
    Chat audio remains on the Mac.
 6. Run TypeScript, lint, all mobile/bridge/relay tests, Expo Doctor, dependency
    audit, secret scan, and `npm pack --dry-run`.
-7. Review App Store screenshots, support URL, privacy URL, export compliance,
+7. Review App Store screenshots, support URL, support email
+   (`microdexsupport@gmail.com`), privacy URL, export compliance,
    and the privacy nutrition label before submission.
 
 ## Reviewer access
