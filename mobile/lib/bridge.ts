@@ -363,7 +363,7 @@ export async function bridgeRequest<T>(
   e2ee?: E2EEKeyMaterial | null,
 ) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 6500);
+  const timeout = setTimeout(() => controller.abort(), 20_000);
   const encryption = e2ee ?? registeredEncryption.get(normalizedBridgeKey(bridgeUrl));
 
   try {
