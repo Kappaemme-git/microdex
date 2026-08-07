@@ -312,7 +312,7 @@ export const MICRO_ACTIONS: readonly MicroAction[] = [
     label: 'Continue in worktree',
     description: 'Continue the current task in a new git worktree.',
     category: 'Task',
-    icon: 'source-branch',
+    icon: 'folder-swap-outline',
     availability: 'runtime',
   },
   {

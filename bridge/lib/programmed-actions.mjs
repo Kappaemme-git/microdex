@@ -271,7 +271,7 @@ const BASE_PROGRAMMABLE_ACTIONS = [
     id: 'workspace.openBrowser',
     label: 'Browser',
     kind: 'desktop',
-    desktopAction: 'menu-item',
+    desktopAction: 'command-menu-search',
     desktopPayload: 'Browser',
   },
   {

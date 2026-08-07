@@ -50,6 +50,10 @@ const commandGlyphSource = await readFile(
   new URL('../components/codex-command-glyph.tsx', import.meta.url),
   'utf8',
 );
+const microActionsSource = await readFile(
+  new URL('../lib/micro-actions.ts', import.meta.url),
+  'utf8',
+);
 
 test('the mobile controller never delegates keys to desktop keyboard shortcuts', () => {
   assert.doesNotMatch(controllerSource, /\/api\/actions\/shortcut/);
@@ -134,6 +138,51 @@ test('the controller exposes every programmable function and the in-app guide', 
   assert.match(controllerSource, /Assignable keys/);
 });
 
+test('the customizable picker excludes controls already built into the deck', () => {
+  const pickerSource = controllerSource.slice(
+    controllerSource.indexOf('const filteredActions'),
+    controllerSource.indexOf('const guideGroups'),
+  );
+  assert.match(pickerSource, /FIXED_CONTROL_ACTION_IDS/);
+  assert.doesNotMatch(pickerSource, /if \(!query\) return MICRO_ACTIONS/);
+  for (const actionId of [
+    'composer.toggleFastMode',
+    'approval.approve',
+    'approval.decline',
+    'forkThread',
+    'composer.submit',
+    'composer.startDictation',
+    'composer.togglePlanMode',
+    'navigateForward',
+    'toggleSidebar',
+    'navigateBack',
+    'composer.increaseReasoningEffort',
+    'composer.decreaseReasoningEffort',
+  ]) {
+    assert.ok(
+      controllerSource.includes(`'${actionId}'`),
+      `${actionId} must be listed as a fixed control`,
+    );
+  }
+});
+
+test('assignable commands have distinct semantic icons', () => {
+  const actionBlocks = [...microActionsSource.matchAll(
+    /id: '([^']+)'[\s\S]*?icon: '([^']+)'/g,
+  )].map((match) => ({ id: match[1], icon: match[2] }));
+  assert.ok(actionBlocks.length > 35, 'expected the complete action catalog');
+  const byIcon = new Map();
+  for (const action of actionBlocks) {
+    const ids = byIcon.get(action.icon) ?? [];
+    ids.push(action.id);
+    byIcon.set(action.icon, ids);
+  }
+  const duplicates = [...byIcon.entries()].filter(([, ids]) => ids.length > 1);
+  assert.deepEqual(duplicates, []);
+  assert.match(commandGlyphSource, /findMicroAction/);
+  assert.match(commandGlyphSource, /action\.icon/);
+});
+
 test('semantic command icons stay consistent in the picker, manager, and deck', () => {
   assert.match(commandGlyphSource, /toggleSidebar: 'sidebarPanel'/);
   assert.match(commandGlyphSource, /'workspace\.openSkills': 'skillsBlock'/);
@@ -168,6 +217,19 @@ test('native Voice Chat state is returned by the bridge', () => {
   assert.match(controllerSource, /remote\?\.voice\?\.state/);
   assert.match(controllerSource, /next\.voice\?\.state === 'setup'/);
   assert.match(controllerSource, /Choose a voice on your Mac/);
+});
+
+test('the Voice key is a predictable start and stop toggle', () => {
+  const voiceHandler = controllerSource.slice(
+    controllerSource.indexOf('const handleVoicePress'),
+    controllerSource.indexOf('useEffect(() => () => {', controllerSource.indexOf('const handleVoicePress')),
+  );
+  assert.match(voiceHandler, /voiceActive \? 'voice-end' : 'voice-start'/);
+  const voiceKey = controllerSource.slice(
+    controllerSource.indexOf("accessibilityLabel={\n                      voiceActive"),
+    controllerSource.indexOf('/>', controllerSource.indexOf("accessibilityLabel={\n                      voiceActive")),
+  );
+  assert.doesNotMatch(voiceKey, /onLongPress/);
 });
 
 test('the Expo preview and bridge receive the same access token', () => {

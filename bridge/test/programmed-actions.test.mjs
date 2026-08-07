@@ -99,6 +99,22 @@ test('programmable actions cover the official Micro command set', () => {
   assert.equal(new Set(ids).size, ids.length);
 });
 
+test('Browser opens the Codex in-app panel through the command menu', () => {
+  const browser = CODEX_PROGRAMMABLE_ACTIONS.find(
+    (action) => action.id === 'workspace.openBrowser',
+  );
+  assert.deepEqual(
+    {
+      desktopAction: browser?.desktopAction,
+      desktopPayload: browser?.desktopPayload,
+    },
+    {
+      desktopAction: 'command-menu-search',
+      desktopPayload: 'Browser',
+    },
+  );
+});
+
 test('the mobile picker exposes exactly the commands the bridge can run', async () => {
   const [commandIds, microActions] = await Promise.all([
     readFile(new URL('../../mobile/lib/programmed-keys.ts', import.meta.url), 'utf8'),

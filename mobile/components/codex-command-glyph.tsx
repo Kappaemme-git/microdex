@@ -1,5 +1,8 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+
 import { CentralIcon, type CentralIconName } from '@/components/central-icon';
 import { CodexMicroActionGlyph } from '@/components/codex-micro-glyph';
+import { findMicroAction } from '@/lib/micro-actions';
 
 const COMMAND_ICON_OVERRIDES: Readonly<Record<string, CentralIconName>> = {
   toggleSidebar: 'sidebarPanel',
@@ -26,10 +29,11 @@ export function CodexCommandGlyph({
   color = '#111719',
 }: CodexCommandGlyphProps) {
   const icon = COMMAND_ICON_OVERRIDES[actionId];
+  const action = findMicroAction(actionId);
 
-  return icon ? (
-    <CentralIcon name={icon} size={size} color={color} />
-  ) : (
-    <CodexMicroActionGlyph actionId={actionId} size={size} color={color} />
-  );
+  if (icon) return <CentralIcon name={icon} size={size} color={color} />;
+  if (action) {
+    return <MaterialCommunityIcons name={action.icon} size={size} color={color} />;
+  }
+  return <CodexMicroActionGlyph actionId={actionId} size={size} color={color} />;
 }

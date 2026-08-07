@@ -71,6 +71,7 @@ import {
   type E2EEKeyMaterial,
   normalizeE2EEKeyMaterial,
 } from '@/lib/e2ee-core';
+import { createDiagnosticReport } from '@/lib/diagnostics';
 import { Fonts } from '@/lib/fonts';
 import { suggestedKeycapForCommand } from '@/lib/keycap-catalog';
 import {
@@ -85,6 +86,7 @@ import {
 } from '@/lib/micro-actions';
 import type {
   MicroAction,
+  MicroActionId,
   MicroActionIcon,
   MicroKeycapId,
   ProgrammedKey,
@@ -149,6 +151,20 @@ const ACTION_PROGRESS: Record<string, string> = {
   sidebar: 'Toggling sidebar',
   back: 'Moving back',
 };
+const FIXED_CONTROL_ACTION_IDS: ReadonlySet<MicroActionId> = new Set([
+  'composer.toggleFastMode',
+  'approval.approve',
+  'approval.decline',
+  'forkThread',
+  'composer.submit',
+  'composer.startDictation',
+  'composer.togglePlanMode',
+  'navigateForward',
+  'toggleSidebar',
+  'navigateBack',
+  'composer.increaseReasoningEffort',
+  'composer.decreaseReasoningEffort',
+]);
 const VISUAL_PREVIEW =
   __DEV__ &&
   Platform.OS === 'web' &&
@@ -233,53 +249,6 @@ function GuideItem({
         <Text style={styles.guideTitle}>{title}</Text>
         <Text style={styles.guideBody}>{body}</Text>
       </View>
-    </View>
-  );
-}
-
-function MicrodexMark({ size = 24 }: { size?: number }) {
-  const padding = size * 0.18;
-  const gap = size * 0.075;
-  const keyWidth = (size - (padding * 2) - gap) / 2;
-  const keyHeight = (size - (padding * 2) - (gap * 2)) / 3;
-
-  return (
-    <View
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size * 0.28,
-        backgroundColor: '#0A0A0A',
-        padding,
-      }}>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}>
-        {Array.from({ length: 6 }, (_, index) => (
-          <View
-            key={index}
-            style={{
-              width: keyWidth,
-              height: keyHeight,
-              borderRadius: Math.max(1, size * 0.045),
-              backgroundColor: '#F7F7F3',
-              opacity: index === 5 ? 0.82 : 1,
-            }}
-          />
-        ))}
-      </View>
-      <View
-        style={{
-          position: 'absolute',
-          right: size * 0.095,
-          bottom: size * 0.17,
-          width: size * 0.37,
-          height: Math.max(1, size * 0.055),
-          borderRadius: size,
-          backgroundColor: '#F7F7F3',
-          transform: [{ rotate: '-43deg' }],
-        }}
-      />
     </View>
   );
 }
@@ -379,7 +348,6 @@ export default function ControllerScreen() {
   ) ?? -1;
   const voiceState = remote?.voice?.state ?? 'inactive';
   const voiceActive = voiceState === 'active';
-  const voiceMuted = remote?.voice?.muted ?? false;
   const supportedReasoningEfforts = activeThread?.supportedReasoningEfforts?.length
     ? activeThread.supportedReasoningEfforts
     : FALLBACK_EFFORTS;
@@ -391,9 +359,12 @@ export default function ControllerScreen() {
   const activeMeta = statusMeta[activeAgent.status];
   const chosenAction = findMicroAction(chosenActionId);
   const filteredActions = useMemo(() => {
+    const customizableActions = MICRO_ACTIONS.filter(
+      (action) => !FIXED_CONTROL_ACTION_IDS.has(action.id),
+    );
     const query = actionSearch.trim().toLowerCase();
-    if (!query) return MICRO_ACTIONS;
-    return MICRO_ACTIONS.filter((action) =>
+    if (!query) return customizableActions;
+    return customizableActions.filter((action) =>
       `${action.label} ${action.description} ${action.category}`.toLowerCase().includes(query),
     );
   }, [actionSearch]);
@@ -1060,7 +1031,7 @@ export default function ControllerScreen() {
 
   const copyDiagnostics = useCallback(async () => {
     let latestStatus = status;
-    let refreshError: string | null = null;
+    let refreshFailed = false;
     if (bridgeUrl.trim() && token.trim()) {
       try {
         latestStatus = await bridgeRequest<BridgeStatus>(
@@ -1069,38 +1040,22 @@ export default function ControllerScreen() {
           '/api/status',
         );
         setStatus(latestStatus);
-      } catch (error) {
-        refreshError = readableError(error);
+      } catch {
+        refreshFailed = true;
       }
     }
 
-    const report = {
-      microdexDiagnostics: 1,
+    const report = createDiagnosticReport({
       generatedAt: new Date().toISOString(),
-      app: {
-        ...mobileAppInfo(),
-        platform: Platform.OS,
-      },
-      bridge: latestStatus?.bridge ?? {
-        version: 'legacy-or-unavailable',
-        protocolVersion: 1,
-      },
-      capabilities: latestStatus?.capabilities ?? null,
-      desktop: latestStatus?.desktop ?? null,
-      connection: {
-        connected: Boolean(latestStatus),
-        refreshError,
-        networkType: networkState.type,
-        networkConnected: networkState.isConnected,
-        transport: bridgeUrl.startsWith('https://') ? 'secure-remote' : 'local',
-        remoteAccess: latestStatus?.connection ?? null,
-      },
-      remote: {
-        online: Boolean(remote?.online),
-        selectedTask: Boolean(remote?.selectedThreadId),
-        lastCommand: remote?.commandResult ?? null,
-      },
-    };
+      app: mobileAppInfo(),
+      platform: Platform.OS,
+      status: latestStatus,
+      remote,
+      refreshFailed,
+      networkType: networkState.type,
+      networkConnected: networkState.isConnected,
+      transport: bridgeUrl.startsWith('https://') ? 'secure-remote' : 'local',
+    });
     await Clipboard.setStringAsync(JSON.stringify(report, null, 2));
     announce('Diagnostic report copied. Send it with the failed button name.');
     await Haptics.selectionAsync();
@@ -1604,9 +1559,9 @@ export default function ControllerScreen() {
       flashHardwareFeedback(LED.error);
       return;
     }
-    const action = voiceActive ? 'voice-toggle-mute' : 'voice-start';
+    const action = voiceActive ? 'voice-end' : 'voice-start';
     setLoadingAction('voice');
-    announce(voiceActive ? 'Updating the Voice microphone…' : 'Opening Voice Chat on your Mac…');
+    announce(voiceActive ? 'Ending Voice Chat…' : 'Opening Voice Chat on your Mac…');
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       const next = await bridgeRequest<RemoteState>(
@@ -1623,6 +1578,8 @@ export default function ControllerScreen() {
         announce('Voice Chat opened on your Mac. Complete anything shown there, then press VOICE again.');
       } else if (next.voice?.state === 'active') {
         announce(next.voice.muted ? 'Voice Chat microphone muted.' : 'Voice Chat is live on your Mac.');
+      } else if (voiceActive && next.voice?.state === 'inactive') {
+        announce('Voice Chat ended on your Mac.');
       } else {
         announce('Voice Chat command sent to your Mac.');
       }
@@ -1645,44 +1602,6 @@ export default function ControllerScreen() {
     requireVerifiedSettings,
     token,
     voiceActive,
-  ]);
-
-  const handleVoiceLongPress = useCallback(async () => {
-    if (!requireBridge() || !requireVerifiedSettings()) {
-      flashHardwareFeedback(LED.error);
-      return;
-    }
-    setLoadingAction('voice');
-    announce('Ending Voice Chat…');
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      const next = await bridgeRequest<RemoteState>(
-        bridgeUrl,
-        token,
-        '/api/desktop/action',
-        { method: 'POST', body: { action: 'voice-end' } },
-      );
-      requireVerifiedCommand(next);
-      setRemote(next);
-      announce('Voice Chat ended on your Mac.');
-      flashHardwareFeedback(LED.complete);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (error) {
-      handleActionError(error);
-      flashHardwareFeedback(LED.error);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    } finally {
-      setLoadingAction(null);
-    }
-  }, [
-    announce,
-    bridgeRequest,
-    bridgeUrl,
-    flashHardwareFeedback,
-    handleActionError,
-    requireBridge,
-    requireVerifiedSettings,
-    token,
   ]);
 
   useEffect(() => () => {
@@ -2703,7 +2622,7 @@ export default function ControllerScreen() {
                   <HardwareKey
                     accessibilityLabel={
                       voiceActive
-                        ? `${voiceMuted ? 'Unmute' : 'Mute'} Voice Chat microphone; hold to end`
+                        ? 'End Voice Chat on the Mac'
                         : 'Start Voice Chat on the Mac'
                     }
                     symbol={<CodexVoiceGlyph color={skeuo.icon} />}
@@ -2715,7 +2634,6 @@ export default function ControllerScreen() {
                     }
                     disabled={loadingAction === 'voice'}
                     onPress={() => void handleVoicePress()}
-                    onLongPress={() => void handleVoiceLongPress()}
                   />
                 </View>
                 <View style={styles.squareSlot}>
@@ -3765,7 +3683,6 @@ export default function ControllerScreen() {
                   </>
                 ) : (
                   <>
-                    <View style={styles.aboutMark}><MicrodexMark size={64} /></View>
                     <Text style={styles.infoLead}>An independent remote for your own Mac.</Text>
                     <Text style={styles.infoParagraph}>
                       Microdex is an independent open-source companion. It is not affiliated with or endorsed by OpenAI or Work Louder. Codex access is not included and every real action executes on a user-owned Mac.
@@ -4453,7 +4370,6 @@ function createStyles(theme: ThemePalette) {
     infoSecondaryActionText: {
       fontFamily: Fonts.sansSemi, fontSize: 11, letterSpacing: 0.55, color: theme.text,
     },
-    aboutMark: { marginTop: 20, alignSelf: 'flex-start' },
     infoVersion: {
       marginTop: 18, fontFamily: Fonts.mono, fontSize: 10.5,
       lineHeight: 16, letterSpacing: 0.35, color: theme.textFaint,

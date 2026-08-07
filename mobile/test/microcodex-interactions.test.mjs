@@ -47,13 +47,13 @@ test('the Mic key implements Codex Micro push-to-talk semantics', () => {
   assert.doesNotMatch(micKey, /Desktop dictation toggled/);
 });
 
-test('Voice is a separate native Codex control with mute and end gestures', () => {
+test('Voice is a separate native Codex control with a predictable start-stop toggle', () => {
   assert.match(controllerSource, /'voice-start'/);
-  assert.match(controllerSource, /'voice-toggle-mute'/);
   assert.match(controllerSource, /'voice-end'/);
+  assert.match(controllerSource, /voiceActive \? 'voice-end' : 'voice-start'/);
   assert.match(controllerSource, /<CodexVoiceGlyph/);
   assert.match(controllerSource, /onPress=\{\(\) => void handleVoicePress\(\)\}/);
-  assert.match(controllerSource, /onLongPress=\{\(\) => void handleVoiceLongPress\(\)\}/);
+  assert.doesNotMatch(controllerSource, /handleVoiceLongPress/);
   assert.match(controllerSource, /Audio never passes through the phone/);
 
   // Voice must not replace or reuse the MIC push-to-talk lifecycle.

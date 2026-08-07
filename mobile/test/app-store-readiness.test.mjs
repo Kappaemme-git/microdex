@@ -57,6 +57,18 @@ test('Settings exposes privacy, support, licenses, about, and app version', () =
   }
   assert.match(controllerSource, /appInfo\.version/);
   assert.match(controllerSource, /appInfo\.buildNumber/);
+  assert.doesNotMatch(controllerSource, /MicrodexMark/);
+});
+
+test('copied diagnostics are built from an explicit secret-free allowlist', () => {
+  const diagnostics = controllerSource.slice(
+    controllerSource.indexOf('const copyDiagnostics'),
+    controllerSource.indexOf('const forgetPairedMac'),
+  );
+  assert.match(diagnostics, /createDiagnosticReport/);
+  assert.doesNotMatch(diagnostics, /latestStatus\?\.desktop/);
+  assert.doesNotMatch(diagnostics, /remote\?\.commandResult/);
+  assert.doesNotMatch(diagnostics, /refreshError/);
 });
 
 test('public policy and support links use stable main-branch URLs', () => {
