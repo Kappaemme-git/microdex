@@ -8,7 +8,7 @@ store listing.
 
 **Name**
 
-Microdex
+Microdex Remote
 
 **Subtitle**
 
