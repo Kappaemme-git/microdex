@@ -6,17 +6,18 @@ analytics service, permission, or data flow changes.
 ## Export compliance
 
 Microdex implements XChaCha20-Poly1305 through `@noble/ciphers` in addition to
-using operating-system HTTPS. Do not hard-code
-`ITSAppUsesNonExemptEncryption=false` before completing Apple's export
-compliance questionnaire.
+using operating-system HTTPS. The App Store Connect questionnaire was completed
+for this implementation as an industry-standard algorithm outside Apple's
+operating system. With France excluded from App Store availability, Apple
+classified the app as not requiring export-compliance documentation. Therefore
+the iOS build sets `ITSAppUsesNonExemptEncryption=false`; in Apple's terminology
+this means the app does not use encryption that requires App Store documentation,
+not that Microdex has no encryption.
 
-In App Store Connect, open **App Information → App Encryption Documentation**
-and answer using the actual implementation: the app uses an industry-standard
-algorithm implemented outside the Apple operating system and does not use a
-proprietary algorithm. Apple determines whether documentation is required for
-the selected storefronts. Distribution in France may require a French
-encryption declaration. If Apple supplies an export compliance code, add it as
-`ITSEncryptionExportComplianceCode` in `mobile/app.json` before the final build.
+Do not add France back to App Store availability without first completing the
+French encryption declaration and updating the App Store Connect determination.
+If Apple later supplies an export compliance code, add it as
+`ITSEncryptionExportComplianceCode` in `mobile/app.json` before that build.
 
 Official references:
 

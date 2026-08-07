@@ -90,13 +90,13 @@ test('public policy and support links use stable main-branch URLs', () => {
 test('the release uses an original Microdex icon and independent positioning', () => {
   assert.equal(appConfig.expo.icon, './assets/images/icon-microdex-faceplate-fullbleed.png');
   assert.equal(appConfig.expo.ios.supportsTablet, false);
-  assert.equal(appConfig.expo.ios.config.usesNonExemptEncryption, true);
+  assert.equal(appConfig.expo.ios.config.usesNonExemptEncryption, false);
   assert.match(controllerSource, /independent open-source companion/i);
   assert.match(controllerSource, /not affiliated with or endorsed by OpenAI or Work Louder/i);
 });
 
 test('source-controlled App Store metadata is English-only and manually released', () => {
-  assert.equal(storeConfig.apple.info['en-US'].title, 'Microdex');
+  assert.equal(storeConfig.apple.info['en-US'].title, 'Microdex Remote');
   assert.equal(
     storeConfig.apple.info['en-US'].subtitle,
     'Control Codex from your phone',

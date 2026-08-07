@@ -20,7 +20,7 @@
       "bundleIdentifier": "cc.microdex.app",
       "buildNumber": "1",
       "config": {
-        "usesNonExemptEncryption": true
+        "usesNonExemptEncryption": false
       },
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "Microdex uses your local network to send commands to the Codex bridge on your computer.",
