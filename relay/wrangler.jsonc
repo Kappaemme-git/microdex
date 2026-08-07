@@ -5,8 +5,7 @@
   "compatibility_date": "2026-08-04",
   "workers_dev": true,
   "observability": {
-    "enabled": true,
-    "head_sampling_rate": 0.05
+    "enabled": false
   },
   "ratelimits": [
     {

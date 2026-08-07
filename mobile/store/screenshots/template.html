@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1320, initial-scale=1" />
+    <title>Microdex App Store Screenshot</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body {
+        width: 1320px;
+        height: 2868px;
+        margin: 0;
+        overflow: hidden;
+        background: #f2f4f8;
+        color: #101216;
+        font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+      }
+      body::before {
+        position: absolute;
+        inset: 0;
+        content: "";
+        background:
+          radial-gradient(circle at 92% 1%, rgba(70, 103, 242, 0.14), transparent 27%),
+          radial-gradient(circle at 2% 24%, rgba(46, 205, 171, 0.09), transparent 23%);
+      }
+      .kicker {
+        position: absolute;
+        top: 68px;
+        left: 74px;
+        color: #777d89;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 28px;
+        font-weight: 650;
+        letter-spacing: 5px;
+      }
+      h1 {
+        position: absolute;
+        top: 120px;
+        left: 74px;
+        width: 1172px;
+        margin: 0;
+        font-size: 84px;
+        font-weight: 760;
+        letter-spacing: -3.8px;
+        line-height: 1.22;
+      }
+      h1 span { display: block; color: #5f6672; }
+      h1.compact {
+        font-size: 72px;
+        letter-spacing: -3px;
+      }
+      .accent {
+        position: absolute;
+        top: 408px;
+        left: 74px;
+        width: 64px;
+        height: 9px;
+        border-radius: 999px;
+        background: #4667f2;
+      }
+      .screen-shadow,
+      .screen {
+        position: absolute;
+      }
+      .screen-shadow {
+        top: 486px;
+        left: 88px;
+        width: 1144px;
+        height: 2420px;
+        border-radius: 52px 52px 0 0;
+        background: rgba(16, 18, 22, 0.08);
+        filter: blur(18px);
+      }
+      .screen {
+        top: 521px;
+        left: 120px;
+        width: 1080px;
+        height: 2347px;
+        overflow: hidden;
+        background: #fff;
+        box-shadow: 0 12px 38px rgba(16, 18, 22, 0.08);
+      }
+      .screen img {
+        display: block;
+        width: 1080px;
+        height: 2347px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="kicker">MICRODEX / IPHONE</div>
+    <h1 id="headline"></h1>
+    <div class="accent"></div>
+    <div class="screen-shadow"></div>
+    <div class="screen"><img id="capture" alt="Microdex interface" /></div>
+    <script>
+      const scenes = {
+        controller: ['Control Codex', 'from your phone', 'controller.png'],
+        workflow: ['Your Codex workflow,', 'anywhere', 'workflow.png'],
+        voice: ['Control Voice Chat', 'on your Mac', 'voice.png'],
+        controls: ['Build your own', 'control deck', 'controls.png'],
+        onboarding: ['One scan.', 'End-to-end encrypted.', 'onboarding.png'],
+      };
+      const name = new URLSearchParams(location.search).get('scene') || 'controller';
+      const scene = scenes[name] || scenes.controller;
+      const headline = document.getElementById('headline');
+      headline.innerHTML = `${scene[0]}<span>${scene[1]}</span>`;
+      if (name === 'onboarding') headline.classList.add('compact');
+      document.getElementById('capture').src = `source/${scene[2]}`;
+      window.scrollTo(0, 0);
+    </script>
+  </body>
+</html>

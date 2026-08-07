@@ -31,7 +31,7 @@ function componentBlock(source, marker, closingTag) {
   return source.slice(start, end + closingTag.length);
 }
 
-test('the Mic key implements Codex Micro push-to-talk semantics', () => {
+test('the Mic key implements Microdex push-to-talk semantics', () => {
   assert.match(hardwareKeySource, /onPressIn\?:\s*\(\)\s*=>\s*void/);
   assert.match(hardwareKeySource, /onPressOut\?:\s*\(\)\s*=>\s*void/);
   assert.match(hardwareKeySource, /onDoublePress\?:\s*\(\)\s*=>\s*void/);
@@ -51,7 +51,7 @@ test('Voice is a separate native Codex control with a predictable start-stop tog
   assert.match(controllerSource, /'voice-start'/);
   assert.match(controllerSource, /'voice-end'/);
   assert.match(controllerSource, /voiceActive \? 'voice-end' : 'voice-start'/);
-  assert.match(controllerSource, /<CodexVoiceGlyph/);
+  assert.match(controllerSource, /<MicrodexVoiceGlyph/);
   assert.match(controllerSource, /onPress=\{\(\) => void handleVoicePress\(\)\}/);
   assert.doesNotMatch(controllerSource, /handleVoiceLongPress/);
   assert.match(controllerSource, /Audio never passes through the phone/);

@@ -5,6 +5,15 @@ import test from 'node:test';
 import { parseDeviceRoute, safeForwardHeaders } from '../src/index.js';
 
 const relaySource = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
+const wranglerConfig = JSON.parse(await readFile(
+  new URL('../wrangler.jsonc', import.meta.url),
+  'utf8',
+));
+
+test('production request logging is disabled', () => {
+  assert.equal(wranglerConfig.observability.enabled, false);
+  assert.equal('head_sampling_rate' in wranglerConfig.observability, false);
+});
 
 test('stable relay routes isolate each Mac by a high-entropy device id', () => {
   assert.deepEqual(

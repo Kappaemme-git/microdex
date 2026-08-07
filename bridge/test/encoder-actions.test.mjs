@@ -72,12 +72,11 @@ test('standard mode has deterministic composer navigation and conversation scrol
   assert.match(desktopSource, /kVK_PageDown/);
 });
 
-test('reasoning changes no longer assume that the native encoder controls effort', () => {
+test('reasoning changes always use the standard App Server path', () => {
   const reasoningBlock = serverSource.slice(
-    serverSource.indexOf('async function applyNativeReasoningSetting'),
-    serverSource.indexOf('async function runEncoderAction'),
+    serverSource.indexOf("url.pathname === '/api/remote/settings'"),
+    serverSource.indexOf("url.pathname === '/api/remote/send'"),
   );
   assert.match(reasoningBlock, /applyReasoningSetting/);
-  assert.doesNotMatch(reasoningBlock, /recordSettings/);
-  assert.doesNotMatch(reasoningBlock, /encoder\.step/);
+  assert.doesNotMatch(reasoningBlock, /nativeShim|applyNative/);
 });

@@ -26,7 +26,7 @@ import {
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CentralIcon } from '@/components/central-icon';
+import { MicrodexIcon } from '@/components/microdex-icon';
 import type { RemoteThread } from '@/lib/bridge';
 import { statusTone, type ThemePalette } from '@/lib/theme';
 
@@ -235,7 +235,7 @@ const ChatDrawer = memo(forwardRef<ChatDrawerHandle, ChatDrawerProps>(
               styles.projectHeader,
               pressed && styles.projectHeaderPressed,
             ]}>
-            <CentralIcon
+            <MicrodexIcon
               name={section.collapsed ? 'folder' : 'folderOpen'}
               size={16}
               color={theme.textMuted}
@@ -244,7 +244,7 @@ const ChatDrawer = memo(forwardRef<ChatDrawerHandle, ChatDrawerProps>(
               {section.project}
             </Text>
             <Text style={styles.projectCount}>{section.allThreads.length}</Text>
-            <CentralIcon
+            <MicrodexIcon
               name={section.collapsed ? 'chevronRight' : 'chevronDown'}
               size={16}
               color={theme.textFaint}
@@ -263,7 +263,7 @@ const ChatDrawer = memo(forwardRef<ChatDrawerHandle, ChatDrawerProps>(
             {archivingProject ? (
               <ActivityIndicator size="small" color={theme.danger} />
             ) : (
-              <CentralIcon
+              <MicrodexIcon
                 name="folderRemove"
                 size={16}
                 color={theme.textFaint}
@@ -298,7 +298,7 @@ const ChatDrawer = memo(forwardRef<ChatDrawerHandle, ChatDrawerProps>(
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <>
-                  <CentralIcon
+                  <MicrodexIcon
                     name="archive"
                     size={17}
                     color="#FFFFFF"
@@ -406,7 +406,7 @@ const ChatDrawer = memo(forwardRef<ChatDrawerHandle, ChatDrawerProps>(
               onPress={close}
               hitSlop={10}
               style={({ pressed }) => [styles.close, pressed && styles.closePressed]}>
-              <CentralIcon name="arrowLeft" size={20} color={theme.text} />
+              <MicrodexIcon name="arrowLeft" size={20} color={theme.text} />
             </Pressable>
             <View style={styles.headerCopy}>
               <Text style={styles.title}>Library</Text>

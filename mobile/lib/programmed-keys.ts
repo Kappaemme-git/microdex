@@ -112,8 +112,8 @@ export const EMPTY_PROGRAMMED_KEYS: readonly null[] = Array.from(
 );
 
 /**
- * Official Codex Micro defaults extracted from the desktop keycap catalog.
- * MIC is push-to-talk on hardware; Microdex uses `composer.startDictation`.
+ * Stable Microdex defaults retained for existing saved layouts.
+ * MIC uses `composer.startDictation`.
  * YOLO / YEET insert the matching composer slash-text.
  * Blank EMPT caps stay unassigned until the user programs them.
  */

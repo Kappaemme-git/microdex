@@ -452,7 +452,7 @@ export function normalizeProgrammedAction({
   }
   if (typeof actionId === 'string' && CODEX_KEYCAP_IDS.includes(actionId)) {
     const error = new Error(
-      `${actionId} is a printed keycap, not a Codex action. Choose a command for this key.`,
+      `${actionId} is a legacy key identifier, not a Codex action. Choose a command for this key.`,
     );
     error.statusCode = 409;
     throw error;
@@ -478,7 +478,7 @@ function contextual(reason) {
 
 const available = Object.freeze({ status: 'available', reason: null });
 
-export function buildActionAvailability({ state, desktop, native }) {
+export function buildActionAvailability({ state, desktop }) {
   const desktopReason = !desktop?.available
     ? desktop?.error || desktop?.reason || 'Desktop controls are unavailable on this Mac.'
     : !desktop?.trusted

@@ -51,7 +51,6 @@ import {
   BRIDGE_PROTOCOL_VERSION,
   BRIDGE_VERSION,
 } from './lib/package-info.mjs';
-import { NativeShimClient } from './lib/native-shim-client.mjs';
 import { mergeVisibleDesktopState } from './lib/visible-desktop-state.mjs';
 import {
   printCheck,
@@ -122,9 +121,6 @@ const messageQueue = new RemoteMessageQueue({
   },
   onChange: () => remoteEvents?.notify(),
 });
-const nativeShim = new NativeShimClient();
-nativeShim.start();
-nativeShim.subscribe(() => remoteEvents?.notify());
 const unsubscribeMessageQueue = codex.subscribe(() => {
   void messageQueue.handleCodexChange();
 });
@@ -266,7 +262,7 @@ async function publicStatus() {
       ),
       actionAvailability: true,
       visibleDesktopRouting: true,
-      nativeHardware: nativeShim.state().connected,
+      nativeHardware: false,
       endToEndEncryption: true,
     },
     connection: {
@@ -301,11 +297,11 @@ async function remoteState() {
     actionAvailability: buildActionAvailability({
       state,
       desktop,
-      native: nativeShim.state(),
     }),
     hardware: {
-      mode: nativeShim.state().connected ? 'native' : 'standard',
-      ...nativeShim.state(),
+      mode: 'standard',
+      connected: false,
+      available: false,
     },
   };
 }
@@ -341,50 +337,6 @@ function actionNotApplied(message) {
   error.statusCode = 409;
   error.code = 'ACTION_NOT_APPLIED';
   return error;
-}
-
-async function applyNativeFastSetting(enabled) {
-  const before = await codex.state();
-  if (before.selected?.fastMode === enabled) return before;
-
-  // Preserve the native Codex Micro event for parity with the real hardware,
-  // then use the idempotent visible control as the authoritative operation.
-  // If the HID action already worked, the desktop helper observes the target
-  // value and does nothing; if it did not, the helper applies it.
-  await nativeShim.command({ type: 'action.tap', action: 'fast' });
-  return (await applyFastSetting({
-    body: {
-      threadId: before.selectedThreadId,
-      fastMode: enabled,
-    },
-    codex,
-  })).state;
-}
-
-async function applyNativeReasoningSetting(effort) {
-  const before = await codex.state();
-  const selected = before.selected;
-  if (!selected) throw new Error('Select a Codex task first.');
-  if (selected.reasoningEffort === effort) return before;
-  const efforts = selected.supportedReasoningEfforts?.length
-    ? selected.supportedReasoningEfforts
-    : REASONING_EFFORTS;
-  if (!efforts.includes(effort)) {
-    const error = new Error(`${effort} reasoning is not supported by the active Codex model.`);
-    error.statusCode = 400;
-    throw error;
-  }
-  const currentIndex = Math.max(0, efforts.indexOf(selected.reasoningEffort));
-  const targetIndex = efforts.indexOf(effort);
-  return (await applyReasoningSetting({
-    body: {
-      threadId: before.selectedThreadId,
-      reasoningEffort: effort,
-      reasoningDirection:
-        targetIndex < currentIndex ? 'reasoning-down' : 'reasoning-up',
-    },
-    codex,
-  })).state;
 }
 
 /** Enough for a fast flick, low enough that a bad client cannot spin forever. */
@@ -629,8 +581,7 @@ if(fragment.get('e2ee')==='1'&&fragment.get('keyId')&&fragment.get('key')){const
       if (typeof body.enabled !== 'boolean') {
         return sendJson(response, 400, { error: 'The enabled field must be a boolean.' });
       }
-      if (nativeShim.state().connected) await applyNativeFastSetting(body.enabled);
-      else await applyFastMode(configPath, body.enabled);
+      await applyFastMode(configPath, body.enabled);
       return sendJson(response, 200, await publicStatus());
     }
 
@@ -639,8 +590,7 @@ if(fragment.get('e2ee')==='1'&&fragment.get('keyId')&&fragment.get('key')){const
       if (!REASONING_EFFORTS.includes(body.effort)) {
         return sendJson(response, 400, { error: 'Invalid reasoning level.' });
       }
-      if (nativeShim.state().connected) await applyNativeReasoningSetting(body.effort);
-      else await applyReasoningEffort(configPath, body.effort);
+      await applyReasoningEffort(configPath, body.effort);
       return sendJson(response, 200, await publicStatus());
     }
 
@@ -684,19 +634,10 @@ if(fragment.get('e2ee')==='1'&&fragment.get('keyId')&&fragment.get('key')){const
         return sendJson(response, 400, { error: 'Invalid keycapId.' });
       }
       const normalized = normalizeProgrammedAction(body);
-      const nativeConnected = nativeShim.state().connected;
       await executeProgrammedAction({
         ...normalized,
         threadId: body.threadId,
         codex,
-        applyFast: nativeConnected
-          ? (settings) => applyNativeFastSetting(settings.fastMode)
-          : undefined,
-        applyReasoning: nativeConnected
-          ? (settings) => applyNativeReasoningSetting(settings.reasoningEffort)
-          : undefined,
-        // Use operations that can report a real result. Native HID delivery is
-        // transport acknowledgment only and must not be treated as completion.
         resolveApproval: (decision) => codex.resolveApproval(decision),
         executeFork: (threadId) => codex.forkThread(threadId),
         executeDesktop: executeCodexDesktopAction,
@@ -750,8 +691,7 @@ if(fragment.get('e2ee')==='1'&&fragment.get('keyId')&&fragment.get('key')){const
         return sendJson(response, 400, { error: 'Invalid reasoning direction.' });
       }
       if (body.fastMode !== undefined) {
-        if (nativeShim.state().connected) await applyNativeFastSetting(body.fastMode);
-        else await applyFastSetting({ body, codex });
+        await applyFastSetting({ body, codex });
         commandResult = {
           action: 'fast',
           applied: true,
@@ -762,12 +702,7 @@ if(fragment.get('e2ee')==='1'&&fragment.get('keyId')&&fragment.get('key')){const
         };
       }
       if (body.reasoningEffort !== undefined) {
-        // The native HID path returns a state and cannot report clamping; the
-        // standard bridge path returns the full outcome.
-        const outcome = nativeShim.state().connected
-          ? null
-          : await applyReasoningSetting({ body, codex });
-        if (!outcome) await applyNativeReasoningSetting(body.reasoningEffort);
+        const outcome = await applyReasoningSetting({ body, codex });
         commandResult = {
           action: 'reasoning',
           applied: true,

@@ -18,11 +18,11 @@ const hardwareKeySource = await readFile(
   'utf8',
 );
 const glyphSource = await readFile(
-  new URL('../../mobile/components/codex-micro-glyph.tsx', import.meta.url),
+  new URL('../../mobile/components/microdex-keycap-glyph.tsx', import.meta.url),
   'utf8',
 );
-const officialGlyphSource = await readFile(
-  new URL('../../mobile/lib/official-codex-micro-glyphs.ts', import.meta.url),
+const iconSource = await readFile(
+  new URL('../../mobile/components/microdex-icon.tsx', import.meta.url),
   'utf8',
 );
 
@@ -43,7 +43,7 @@ function catalogEntries() {
     }));
 }
 
-test('the catalog covers every printed keycap exactly once', () => {
+test('the catalog covers every stable key identifier exactly once', () => {
   const entries = catalogEntries();
   assert.equal(entries.length, CODEX_KEYCAP_IDS.length);
   const ids = entries.map((entry) => entry.id);
@@ -78,24 +78,18 @@ test('every keycap has a readable name and an icon', () => {
   }
 });
 
-test('every printed keycap is mapped to official Codex Micro artwork', () => {
-  const mapping = officialGlyphSource.slice(
-    officialGlyphSource.indexOf('export const OFFICIAL_CODEX_MICRO_KEYCAP_LEGENDS'),
-  );
-  const mappedIds = [
-    ...mapping.matchAll(
-      /^\s*(?:["']([^"']+)["']|([A-Z][A-Z0-9+-]*)):\s*["'][^"']+["'],?$/gm,
-    ),
-  ].map((match) => match[1] ?? match[2]);
-
-  assert.equal(new Set(mappedIds).size, mappedIds.length, 'no duplicate keycap mapping');
-  assert.deepEqual(
-    [...mappedIds].sort(),
-    [...CODEX_KEYCAP_IDS].sort(),
-    'the official vector set must cover every physical keycap',
-  );
-  assert.match(glyphSource, /OFFICIAL_CODEX_MICRO_KEYCAP_LEGENDS\[keycapId\]/);
-  assert.match(glyphSource, /OFFICIAL_CODEX_MICRO_GLYPHS\[legend\]/);
+test('every key identifier resolves through the MIT-licensed Microdex icon system', () => {
+  for (const entry of catalogEntries()) {
+    const quoted = `  '${entry.icon}':`;
+    const identifier = `  ${entry.icon}:`;
+    assert.ok(
+      iconSource.includes(quoted) || iconSource.includes(identifier),
+      `${entry.id} points at missing Microdex icon alias ${entry.icon}`,
+    );
+  }
+  assert.match(glyphSource, /keycapDescriptor\(keycapId\)/);
+  assert.match(glyphSource, /<MicrodexIcon name=\{descriptor\.icon\}/);
+  assert.doesNotMatch(glyphSource, /OFFICIAL_CODEX|official-codex/i);
 });
 
 test('Send uses the CODEX keycap rather than the decorative OpenAI cap', () => {
@@ -134,19 +128,19 @@ test('the keys on the deck carry no printed name', () => {
   assert.ok(hardwareKeySource.includes('caption?: string;'), 'caption stays available');
 });
 
-test('the visible Micro controls use official vectors instead of icon-font approximations', () => {
+test('the visible controls use the same Microdex icon renderer as saved keys', () => {
   for (const keycapId of ['FAST', 'APPR', 'REJ', 'SPLIT', 'MIC', 'CODEX']) {
     assert.match(
       controllerSource,
-      new RegExp(`CodexMicroGlyph keycapId="${keycapId}"`),
-      `${keycapId} should use its official vector`,
+      new RegExp(`MicrodexKeycapGlyph keycapId="${keycapId}"`),
+      `${keycapId} should use the Microdex renderer`,
     );
   }
   assert.match(
     controllerSource,
     /CodexCommandGlyph actionId=\{actionId\} size=\{24\} color=\{skeuo\.icon\}/,
   );
-  assert.match(controllerSource, /CodexMicroActionGlyph/);
+  assert.match(controllerSource, /MicrodexActionGlyph/);
 });
 
 test('the editor shows one scrolling command catalog and keeps keycap metadata internal', () => {

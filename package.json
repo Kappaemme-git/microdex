@@ -1,6 +1,6 @@
 {
   "name": "microdex-cli",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Local Mac bridge and pairing CLI for Microdex on iPhone.",
   "private": false,
   "type": "module",
@@ -11,11 +11,11 @@
     "bridge/hooks",
     "bridge/lib",
     "bridge/native",
-    "bridge/native-shim",
     "bridge/scripts/microdex.mjs",
     "bridge/scripts/diagnose-desktop.mjs",
     "bridge/server.mjs",
     "docs/APP_STORE_RELEASE.md",
+    "THIRD_PARTY_NOTICES.md",
     "PRIVACY.md",
     "SUPPORT.md",
     "README.md"
@@ -33,7 +33,6 @@
     "web:build": "npm --prefix web run build",
     "lint": "npm --prefix mobile run lint",
     "test": "node --test bridge/test/*.test.mjs",
-    "native:test": "node bridge/native-shim/self-test.mjs",
     "fast:on": "node bridge/scripts/set-fast.mjs on",
     "fast:off": "node bridge/scripts/set-fast.mjs off",
     "fast:status": "node bridge/scripts/set-fast.mjs status"

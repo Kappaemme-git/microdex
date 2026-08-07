@@ -1,14 +1,12 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ComponentProps, ReactNode, useEffect, useRef } from 'react';
+import { ReactNode, useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { MicrodexIcon, type MicrodexIconName } from '@/components/microdex-icon';
 import { RaisedCap, useSkeuo } from '@/components/skeuo';
-
-type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 type HardwareKeyProps = {
   accessibilityLabel: string;
-  icon?: IconName;
+  icon?: MicrodexIconName;
   symbol?: ReactNode;
   caption?: string;
   /** `rgb` = translucent task key with bloom. `command` = solid white icon key. */
@@ -211,7 +209,7 @@ export function HardwareKey({
         {!emptySymbol ? (
           <View style={[styles.symbol, caption ? styles.symbolWithCaption : null]}>
             {symbol ?? (
-              <MaterialCommunityIcons
+              <MicrodexIcon
                 name={icon ?? 'circle-outline'}
                 size={caption ? 17 : rgb ? 20 : 22}
                 color={iconColor}

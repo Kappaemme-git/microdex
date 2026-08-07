@@ -19,6 +19,9 @@
       "supportsTablet": false,
       "bundleIdentifier": "cc.microdex.app",
       "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": true
+      },
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "Microdex uses your local network to send commands to the Codex bridge on your computer.",
         "NSCameraUsageDescription": "Microdex uses the camera to scan the secure pairing QR shown by the desktop bridge.",

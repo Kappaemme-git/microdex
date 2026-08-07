@@ -1,6 +1,4 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ComponentProps } from 'react';
-
+import type { MicrodexIconName } from '@/components/microdex-icon';
 import {
   DEFAULT_KEYCAP_COMMANDS,
   DEFAULT_MICRO_LAYOUT,
@@ -20,7 +18,7 @@ import type {
   ProgrammableCommandId,
 } from '@/lib/programmed-keys';
 
-export type MicroActionIcon = ComponentProps<typeof MaterialCommunityIcons>['name'];
+export type MicroActionIcon = MicrodexIconName;
 export type MicroActionId = ProgrammableCommandId | 'microdex.insertPrompt';
 
 export type MicroAction = {
@@ -36,9 +34,8 @@ export type MicroAction = {
 /**
  * Printed caps and executable actions are intentionally separate.
  *
- * Codex Micro lets a user put any cap on a command slot and then assign a
- * command (or skill) to that slot. A cap such as GIT or YOLO has no built-in
- * behavior by itself.
+ * Storage key identifiers and executable actions are separate. A legacy ID such
+ * as GIT or YOLO has no built-in behavior by itself.
  */
 export const MICRO_KEYCAPS = MICRO_KEYCAP_IDS.map((id) => ({ id }));
 

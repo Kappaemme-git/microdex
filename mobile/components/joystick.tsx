@@ -14,7 +14,7 @@ type Direction = 'up' | 'right' | 'down' | 'left';
 const TICKS = Array.from({ length: 7 }, (_, index) => index);
 const DIRECTION_THRESHOLD = 0.45;
 
-/** Black rubber navigation joystick — Codex Micro top-right stick. */
+/** Black rubber navigation joystick used by the Microdex control deck. */
 export function Joystick({ onDirection }: { onDirection: (direction: Direction) => void }) {
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);

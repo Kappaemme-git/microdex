@@ -7,7 +7,7 @@ import type { ThemePalette } from '@/lib/theme';
 import { useTheme } from '@/lib/theme';
 
 /**
- * Codex Micro material tokens — frosted frame, PBT/PC keycaps, soft RGB bloom.
+ * Microdex material tokens — frosted frame, PBT/PC keys, soft RGB bloom.
  * Light = paper white. Dark = near-black polycarbonate.
  */
 

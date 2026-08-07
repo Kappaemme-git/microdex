@@ -22,7 +22,7 @@ const ORBIT_RECORDING = 1350;
 const ORBIT_PROCESSING = 820;
 
 /**
- * Codex Micro-style status lighting.
+ * Microdex status lighting.
  *
  * The real device is not surrounded by one even neon stroke: most of the light
  * pools through the translucent left wall and lower edge, while a tighter rim

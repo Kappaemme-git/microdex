@@ -13,7 +13,7 @@ const Module = require('node:module');
 const {
   FAKE_DESCRIPTOR,
   patchModule,
-} = require('../native-shim/shim/patch.cjs');
+} = require('../shim/patch.cjs');
 
 const APP_ASAR = '/Applications/ChatGPT.app/Contents/Resources/app.asar';
 const SDK_BUNDLE =
@@ -104,7 +104,7 @@ test('the exact Codex Work Louder SDK receives synthetic hardware actions', asyn
     `microdex-real-sdk-control-${process.pid}.sock`,
   );
   const bridgePath = fileURLToPath(
-    new URL('../native-shim/bridge.mjs', import.meta.url),
+    new URL('../bridge.mjs', import.meta.url),
   );
   const bridge = spawn(process.execPath, [bridgePath], {
     env: {

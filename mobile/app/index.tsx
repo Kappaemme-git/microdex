@@ -1,4 +1,3 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -6,6 +5,7 @@ import * as Linking from 'expo-linking';
 import * as Network from 'expo-network';
 import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
+import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -33,13 +33,13 @@ import { runOnJS } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import ChatDrawer, { type ChatDrawerHandle } from '@/components/chat-drawer';
-import { CentralIcon, type CentralIconName } from '@/components/central-icon';
 import { CodexCommandGlyph } from '@/components/codex-command-glyph';
+import { MicrodexIcon, type MicrodexIconName } from '@/components/microdex-icon';
 import {
-  CodexMicroActionGlyph,
-  CodexMicroGlyph,
-  CodexVoiceGlyph,
-} from '@/components/codex-micro-glyph';
+  MicrodexActionGlyph,
+  MicrodexKeycapGlyph,
+  MicrodexVoiceGlyph,
+} from '@/components/microdex-keycap-glyph';
 import { DeckLighting, type MicLight } from '@/components/deck-lighting';
 import { HardwareKey } from '@/components/hardware-key';
 import { Joystick } from '@/components/joystick';
@@ -96,7 +96,7 @@ import { claimPairingPayload, parsePairingUrl } from '@/lib/pairing';
 import type { AgentStatusKey } from '@/lib/theme';
 import { LED, LED_RECORDING, statusTone, ThemePalette, useTheme } from '@/lib/theme';
 
-const STATUS_ICON: Partial<Record<AgentStatusKey, CentralIconName>> = {
+const STATUS_ICON: Partial<Record<AgentStatusKey, MicrodexIconName>> = {
   complete: 'successCircle',
   waiting: 'alert',
   error: 'alert',
@@ -128,7 +128,7 @@ const SUPPORT_URL =
 const LICENSE_URL =
   'https://github.com/Kappaemme-git/microdex/blob/main/LICENSE';
 const THIRD_PARTY_LICENSE_URL =
-  'https://github.com/Kappaemme-git/microdex/blob/main/bridge/native-shim/THIRD_PARTY_LICENSE.txt';
+  'https://github.com/Kappaemme-git/microdex/blob/main/THIRD_PARTY_NOTICES.md';
 const EXPO_BRIDGE_TOKEN = __DEV__
   ? process.env.EXPO_PUBLIC_MICRODEX_TOKEN?.trim() ?? ''
   : '';
@@ -167,8 +167,9 @@ const FIXED_CONTROL_ACTION_IDS: ReadonlySet<MicroActionId> = new Set([
 ]);
 const VISUAL_PREVIEW =
   __DEV__ &&
-  Platform.OS === 'web' &&
-  new URLSearchParams(globalThis.location?.search ?? '').get('preview') === '1';
+  ((Platform.OS === 'web' &&
+    new URLSearchParams(globalThis.location?.search ?? '').get('preview') === '1') ||
+    process.env.EXPO_PUBLIC_VISUAL_PREVIEW === '1');
 const VISUAL_PREVIEW_REMOTE = createDemoRemoteState();
 const VISUAL_PREVIEW_STATUS = createDemoStatus(
   VISUAL_PREVIEW_REMOTE,
@@ -240,9 +241,9 @@ function GuideItem({
     <View style={styles.guideItem}>
       <View style={styles.guideIcon}>
         {actionId ? (
-          <CodexMicroActionGlyph actionId={actionId} size={20} color={theme.text} />
+          <MicrodexActionGlyph actionId={actionId} size={20} color={theme.text} />
         ) : (
-          <MaterialCommunityIcons name={icon ?? 'circle-outline'} size={20} color={theme.text} />
+          <MicrodexIcon name={icon ?? 'circle-outline'} size={20} color={theme.text} />
         )}
       </View>
       <View style={styles.guideCopy}>
@@ -254,23 +255,28 @@ function GuideItem({
 }
 
 export default function ControllerScreen() {
+  const previewParams = useLocalSearchParams<{ scene?: string | string[] }>();
+  const visualPreviewScene = Array.isArray(previewParams.scene)
+    ? previewParams.scene[0]
+    : previewParams.scene ?? 'controller';
+  const visualPreviewActive = VISUAL_PREVIEW && visualPreviewScene !== 'onboarding';
   const { theme, mode, setMode } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const skeuo = useSkeuo();
   const statusMeta = useMemo(() => statusTone(theme), [theme]);
   const insets = useSafeAreaInsets();
-  const [demoMode, setDemoMode] = useState(VISUAL_PREVIEW);
+  const [demoMode, setDemoMode] = useState(visualPreviewActive);
   const [bridgeUrl, setBridgeUrl] = useState(inferBridgeUrl());
   const [token, setToken] = useState(EXPO_BRIDGE_TOKEN);
   const [e2ee, setE2ee] = useState<E2EEKeyMaterial | null>(null);
   const [status, setStatus] = useState<BridgeStatus | null>(
-    VISUAL_PREVIEW ? VISUAL_PREVIEW_STATUS : null,
+    visualPreviewActive ? VISUAL_PREVIEW_STATUS : null,
   );
   const [remote, setRemote] = useState<RemoteState | null>(
-    VISUAL_PREVIEW ? VISUAL_PREVIEW_REMOTE : null,
+    visualPreviewActive ? VISUAL_PREVIEW_REMOTE : null,
   );
   const [liveChannel, setLiveChannel] = useState<'offline' | 'connecting' | 'live'>(
-    VISUAL_PREVIEW ? 'live' : 'offline',
+    visualPreviewActive ? 'live' : 'offline',
   );
   const [draft, setDraft] = useState('');
   const [composerVisible, setComposerVisible] = useState(true);
@@ -283,7 +289,7 @@ export default function ControllerScreen() {
   const [consentVisible, setConsentVisible] = useState(false);
   const [consentContinuation, setConsentContinuation] =
     useState<ConsentContinuation>(null);
-  const [aiConsent, setAiConsent] = useState(VISUAL_PREVIEW);
+  const [aiConsent, setAiConsent] = useState(visualPreviewActive);
   const [infoSheet, setInfoSheet] = useState<InfoSheet | null>(null);
   const [commandCopied, setCommandCopied] = useState(false);
   const commandCopiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -320,9 +326,9 @@ export default function ControllerScreen() {
   const connectionInFlight = useRef(false);
   const pairingInFlight = useRef(false);
   const pendingPairingCode = useRef<string | null>(null);
-  const aiConsentRef = useRef(VISUAL_PREVIEW);
+  const aiConsentRef = useRef(visualPreviewActive);
   const remoteRef = useRef<RemoteState | null>(
-    VISUAL_PREVIEW ? VISUAL_PREVIEW_REMOTE : null,
+    visualPreviewActive ? VISUAL_PREVIEW_REMOTE : null,
   );
   /** Pairing link already attempted, so an incoming link is claimed once only. */
   const handledPairingUrl = useRef<string | null>(null);
@@ -335,6 +341,48 @@ export default function ControllerScreen() {
   useEffect(() => {
     remoteRef.current = remote;
   }, [remote]);
+
+  useEffect(() => {
+    if (!VISUAL_PREVIEW) return;
+
+    setSettingsVisible(false);
+    setScannerVisible(false);
+    setConsentVisible(false);
+    setInfoSheet(null);
+    setGuideVisible(false);
+    setKeyManagerVisible(false);
+    setEditingSlot(null);
+    chatDrawerRef.current?.close();
+
+    if (visualPreviewScene === 'onboarding') {
+      setDemoMode(false);
+      setAiConsent(false);
+      aiConsentRef.current = false;
+      setStatus(null);
+      setRemote(null);
+      remoteRef.current = null;
+      setLiveChannel('offline');
+      return;
+    }
+
+    const previewRemote = createDemoRemoteState();
+    if (visualPreviewScene === 'voice') {
+      previewRemote.voice = { state: 'active', muted: false };
+    }
+    setDemoMode(true);
+    setAiConsent(true);
+    aiConsentRef.current = true;
+    setRemote(previewRemote);
+    remoteRef.current = previewRemote;
+    setStatus(createDemoStatus(previewRemote, MICRO_ACTIONS.length));
+    setLiveChannel('live');
+
+    const revealTimer = setTimeout(() => {
+      if (visualPreviewScene === 'workflow') chatDrawerRef.current?.open();
+      if (visualPreviewScene === 'controls') setKeyManagerVisible(true);
+    }, 450);
+    return () => clearTimeout(revealTimer);
+  }, [visualPreviewScene]);
 
   const activeAgent = remote?.selected ?? {
     id: '0', name: 'No task selected', task: 'Connect to Codex App Server', status: 'idle' as const,
@@ -2130,7 +2178,7 @@ export default function ControllerScreen() {
           actionId ? (
             <CodexCommandGlyph actionId={actionId} size={24} color={skeuo.icon} />
           ) : (
-            <CentralIcon name="plus" size={22} color={skeuo.icon} />
+            <MicrodexIcon name="plus" size={22} color={skeuo.icon} />
           )
         }
         phase={slotIndex / 6}
@@ -2166,7 +2214,7 @@ export default function ControllerScreen() {
         commandCopied && styles.gateCopyButtonDone,
         pressed && styles.gateButtonPressed,
       ]}>
-      <CentralIcon
+      <MicrodexIcon
         name={commandCopied ? 'check' : 'copy'}
         size={15}
         color={commandCopied ? theme.online : theme.textMuted}
@@ -2238,7 +2286,7 @@ export default function ControllerScreen() {
                     {bridgeConnecting ? (
                       <ActivityIndicator size="small" color={theme.bg} />
                     ) : (
-                      <CentralIcon name="refresh" size={17} color={theme.bg} />
+                      <MicrodexIcon name="refresh" size={17} color={theme.bg} />
                     )}
                     <Text style={styles.gatePrimaryButtonText}>Retry connection</Text>
                   </Pressable>
@@ -2249,7 +2297,7 @@ export default function ControllerScreen() {
                       styles.gateSecondaryButton,
                       pressed && styles.gateButtonPressed,
                     ]}>
-                    <CentralIcon name="qrCode" size={17} color={theme.text} />
+                    <MicrodexIcon name="qrCode" size={17} color={theme.text} />
                     <Text style={styles.gateSecondaryButtonText}>Pair another Mac</Text>
                   </Pressable>
                   <Pressable
@@ -2328,7 +2376,7 @@ export default function ControllerScreen() {
                       styles.gatePrimaryButton,
                       pressed && styles.gateButtonPressed,
                     ]}>
-                    <CentralIcon name="qrCode" size={17} color={theme.bg} />
+                    <MicrodexIcon name="qrCode" size={17} color={theme.bg} />
                     <Text style={styles.gatePrimaryButtonText}>Scan pairing code</Text>
                   </Pressable>
 
@@ -2340,7 +2388,7 @@ export default function ControllerScreen() {
                       styles.gateDemoButton,
                       pressed && styles.gateButtonPressed,
                     ]}>
-                    <MaterialCommunityIcons name="play-outline" size={15} color={theme.textMuted} />
+                    <MicrodexIcon name="play-outline" size={15} color={theme.textMuted} />
                     <Text style={styles.gateDemoButtonText}>Explore without a Mac</Text>
                   </Pressable>
 
@@ -2385,7 +2433,7 @@ export default function ControllerScreen() {
                   styles.threadSwitcherMain,
                   pressed && styles.threadSwitcherPressed,
                 ]}>
-                <CentralIcon
+                <MicrodexIcon
                   name="chat"
                   size={14}
                   color={theme.textMuted}
@@ -2406,7 +2454,7 @@ export default function ControllerScreen() {
                 {loadingAction === 'select' ? (
                   <ActivityIndicator size="small" color={theme.textMuted} />
                 ) : (
-                  <CentralIcon name="chevronRight" size={17} color={theme.textMuted} />
+                  <MicrodexIcon name="chevronRight" size={17} color={theme.textMuted} />
                 )}
               </Pressable>
             </View>
@@ -2418,7 +2466,7 @@ export default function ControllerScreen() {
                 void Haptics.selectionAsync();
               }}
               style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}>
-              <CentralIcon
+              <MicrodexIcon
                 name={mode === 'dark' ? 'sun' : 'moon'}
                 size={17}
                 color={theme.text}
@@ -2429,7 +2477,7 @@ export default function ControllerScreen() {
               accessibilityLabel="Open Microdex settings"
               onPress={() => setSettingsVisible(true)}
               style={({ pressed }) => [styles.statusButton, pressed && styles.iconButtonPressed]}>
-              <CentralIcon name="settings" size={18} color={theme.text} />
+              <MicrodexIcon name="settings" size={18} color={theme.text} />
               <View
                 style={[
                   styles.headerStatusDot,
@@ -2518,7 +2566,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Toggle Fast Mode"
-                    symbol={<CodexMicroGlyph keycapId="FAST" color={skeuo.icon} />}
+                    symbol={<MicrodexKeycapGlyph keycapId="FAST" color={skeuo.icon} />}
                     unavailableReason={unavailableReason('FAST')}
                     disabled={loadingAction === 'fast'}
                     onPress={() => void toggleFast()}
@@ -2527,7 +2575,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Approve current request"
-                    symbol={<CodexMicroGlyph keycapId="APPR" color={skeuo.icon} />}
+                    symbol={<MicrodexKeycapGlyph keycapId="APPR" color={skeuo.icon} />}
                     unavailableReason={unavailableReason('APPR')}
                     disabled={loadingAction === 'approve'}
                     active={Boolean(remote?.pendingApproval)}
@@ -2538,7 +2586,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Decline current request"
-                    symbol={<CodexMicroGlyph keycapId="REJ" color={skeuo.icon} />}
+                    symbol={<MicrodexKeycapGlyph keycapId="REJ" color={skeuo.icon} />}
                     unavailableReason={unavailableReason('REJ')}
                     disabled={loadingAction === 'decline'}
                     onPress={() => void resolveApproval('decline')}
@@ -2547,7 +2595,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Continue in a new chat"
-                    symbol={<CodexMicroGlyph keycapId="SPLIT" color={skeuo.icon} />}
+                    symbol={<MicrodexKeycapGlyph keycapId="SPLIT" color={skeuo.icon} />}
                     unavailableReason={unavailableReason('SPLIT')}
                     disabled={loadingAction === 'fork'}
                     onPress={() => void forkCurrentTask()}
@@ -2608,7 +2656,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Push to talk"
-                    symbol={<CodexMicroGlyph keycapId="MIC" color={skeuo.icon} />}
+                    symbol={<MicrodexKeycapGlyph keycapId="MIC" color={skeuo.icon} />}
                     active={dictationActive}
                     glowColor={dictationActive ? LED_RECORDING : undefined}
                     unavailableReason={unavailableReason('MIC')}
@@ -2625,7 +2673,7 @@ export default function ControllerScreen() {
                         ? 'End Voice Chat on the Mac'
                         : 'Start Voice Chat on the Mac'
                     }
-                    symbol={<CodexVoiceGlyph color={skeuo.icon} />}
+                    symbol={<MicrodexVoiceGlyph color={skeuo.icon} />}
                     active={voiceActive || voiceState === 'setup' || voiceState === 'launching'}
                     glowColor={
                       voiceActive || voiceState === 'setup' || voiceState === 'launching'
@@ -2639,7 +2687,7 @@ export default function ControllerScreen() {
                 <View style={styles.squareSlot}>
                   <HardwareKey
                     accessibilityLabel="Send Microdex draft or desktop composer"
-                    symbol={<CodexMicroGlyph keycapId="CODEX" color={skeuo.icon} />}
+                    symbol={<MicrodexKeycapGlyph keycapId="CODEX" color={skeuo.icon} />}
                     unavailableReason={draft.trim() ? unavailableReason('CODEX') : undefined}
                     disabled={loadingAction === 'send'}
                     onPress={() => void sendDraft()}
@@ -2652,10 +2700,10 @@ export default function ControllerScreen() {
               ) : (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Connect your Mac to Codex Micro"
+                  accessibilityLabel="Connect your Mac to Microdex"
                   onPress={() => setSettingsVisible(true)}
                   style={({ pressed }) => [styles.buildLink, pressed && styles.buildLinkPressed]}>
-                  <CentralIcon name="link" size={12} color={skeuo.accent} />
+                  <MicrodexIcon name="link" size={12} color={skeuo.accent} />
                   <Text style={styles.buildLinkText}>CONNECT YOUR MAC</Text>
                 </Pressable>
               )}
@@ -2669,7 +2717,7 @@ export default function ControllerScreen() {
           <View style={styles.composerHeader}>
             <View style={styles.composerIdentity}>
               <View style={styles.composerChatIcon}>
-                <CentralIcon name="chat" size={16} color={theme.online} />
+                <MicrodexIcon name="chat" size={16} color={theme.online} />
               </View>
               <View style={styles.composerIdentityText}>
                 <Text style={styles.composerKicker}>Chat to Codex</Text>
@@ -2680,7 +2728,7 @@ export default function ControllerScreen() {
               {loadingAction ? (
                 <ActivityIndicator size="small" color={theme.textMuted} />
               ) : statusIcon ? (
-                <CentralIcon
+                <MicrodexIcon
                   name={statusIcon}
                   size={13}
                   color={activeMeta.textColor}
@@ -2700,7 +2748,7 @@ export default function ControllerScreen() {
           </View>
 
           <View style={styles.composerBox}>
-            <CentralIcon
+            <MicrodexIcon
               name="chat"
               size={18}
               color={theme.textFaint}
@@ -2731,7 +2779,7 @@ export default function ControllerScreen() {
               {loadingAction === 'send' ? (
                 <ActivityIndicator size="small" color={theme.accentText} />
               ) : (
-                <CentralIcon name="arrowUp" size={20} color={theme.accentText} />
+                <MicrodexIcon name="arrowUp" size={20} color={theme.accentText} />
               )}
             </Pressable>
           </View>
@@ -2769,7 +2817,7 @@ export default function ControllerScreen() {
                       {removing ? (
                         <ActivityIndicator size="small" color={theme.danger} />
                       ) : (
-                        <CentralIcon name="close" size={15} color={theme.textFaint} />
+                        <MicrodexIcon name="close" size={15} color={theme.textFaint} />
                       )}
                     </Pressable>
                   </View>
@@ -2783,14 +2831,14 @@ export default function ControllerScreen() {
               {activeThread?.fastMode ? 'Fast' : 'Standard'} · {supportedReasoningEfforts[dialIndex]}
             </Text>
             <View style={styles.composerRoute}>
-              <CentralIcon name="output" size={12} color={theme.textFaint} />
+              <MicrodexIcon name="output" size={12} color={theme.textFaint} />
               <Text style={styles.composerMeta}>OUTPUT ON MAC</Text>
             </View>
           </View>
 
           {noticeError ? (
             <View style={[styles.notice, styles.noticeError, styles.composerNotice]}>
-              <CentralIcon name="alert" size={16} color={theme.dangerText} />
+              <MicrodexIcon name="alert" size={16} color={theme.dangerText} />
               <Text style={[styles.noticeText, styles.noticeTextError]}>{notice}</Text>
             </View>
           ) : null}
@@ -2850,7 +2898,7 @@ export default function ControllerScreen() {
                     accessibilityLabel="Close key manager"
                     onPress={() => setKeyManagerVisible(false)}
                     style={styles.closeButton}>
-                    <CentralIcon name="close" size={20} color={theme.text} />
+                    <MicrodexIcon name="close" size={20} color={theme.text} />
                   </Pressable>
                 </View>
               </>
@@ -2888,7 +2936,7 @@ export default function ControllerScreen() {
                             color={action ? theme.text : theme.blue}
                           />
                         ) : (
-                          <CentralIcon name="plus" size={24} color={theme.blue} />
+                          <MicrodexIcon name="plus" size={24} color={theme.blue} />
                         )}
                       </View>
                       <Text style={styles.keyManagerSlot}>KEY {slotIndex + 1}</Text>
@@ -2906,7 +2954,7 @@ export default function ControllerScreen() {
                         !programmed && styles.removeKeyButtonDisabled,
                         pressed && styles.removeKeyButtonPressed,
                       ]}>
-                      <CentralIcon name="trash" size={16} color={theme.danger} />
+                      <MicrodexIcon name="trash" size={16} color={theme.danger} />
                       <Text style={styles.removeKeyText}>REMOVE</Text>
                     </Pressable>
                   </View>
@@ -2923,7 +2971,7 @@ export default function ControllerScreen() {
                 !programmedKeys.some(Boolean) && styles.clearAllKeysButtonDisabled,
                 pressed && styles.removeKeyButtonPressed,
               ]}>
-              <CentralIcon name="trash" size={17} color={theme.danger} />
+              <MicrodexIcon name="trash" size={17} color={theme.danger} />
               <Text style={styles.clearAllKeysText}>CLEAR ALL</Text>
             </Pressable>
           </DismissibleSheet>
@@ -2963,7 +3011,7 @@ export default function ControllerScreen() {
                     accessibilityLabel="Close key catalog"
                     onPress={() => setEditingSlot(null)}
                     style={styles.closeButton}>
-                    <CentralIcon name="close" size={20} color={theme.text} />
+                    <MicrodexIcon name="close" size={20} color={theme.text} />
                   </Pressable>
                 </View>
               </>
@@ -2973,7 +3021,7 @@ export default function ControllerScreen() {
               key manager, and on your Microdex key.
             </Text>
             <View style={styles.searchWrap}>
-              <CentralIcon name="search" size={18} color={theme.textFaint} />
+              <MicrodexIcon name="search" size={18} color={theme.textFaint} />
               <TextInput
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -3026,7 +3074,7 @@ export default function ControllerScreen() {
                     </View>
                     <View style={styles.actionCheck}>
                       {selected ? (
-                        <CentralIcon name="check" size={18} color={theme.text} />
+                        <MicrodexIcon name="check" size={18} color={theme.text} />
                       ) : null}
                     </View>
                   </Pressable>
@@ -3049,7 +3097,7 @@ export default function ControllerScreen() {
                 accessibilityRole="button"
                 onPress={() => void clearProgrammedKey()}
                 style={({ pressed }) => [styles.clearButton, pressed && styles.guideButtonPressed]}>
-                <CentralIcon name="trash" size={18} color={theme.textMuted} />
+                <MicrodexIcon name="trash" size={18} color={theme.textMuted} />
                 <Text style={styles.clearButtonText}>CLEAR</Text>
               </Pressable>
               <Pressable
@@ -3062,7 +3110,7 @@ export default function ControllerScreen() {
                   pressed && styles.connectButtonPressed,
                 ]}>
                 <Text style={styles.connectButtonText}>SAVE KEY</Text>
-                <CentralIcon name="check" size={20} color={theme.accentText} />
+                <MicrodexIcon name="check" size={20} color={theme.accentText} />
               </Pressable>
             </View>
           </DismissibleSheet>
@@ -3091,14 +3139,14 @@ export default function ControllerScreen() {
                 <SheetHandlePill color={theme.borderStrong} />
                 <View style={styles.sheetTitleRow}>
                   <View>
-                    <Text style={styles.sheetKicker}>CODEX MICRO CONTROLS</Text>
+                    <Text style={styles.sheetKicker}>MICRODEX CONTROLS</Text>
                     <Text style={styles.sheetTitle}>What every control does</Text>
                   </View>
                   <Pressable
                     accessibilityLabel="Close key guide"
                     onPress={() => setGuideVisible(false)}
                     style={styles.closeButton}>
-                    <CentralIcon name="close" size={20} color={theme.text} />
+                    <MicrodexIcon name="close" size={20} color={theme.text} />
                   </Pressable>
                 </View>
               </>
@@ -3118,7 +3166,7 @@ export default function ControllerScreen() {
                 theme={theme}
                 icon="plus-circle-outline"
                 title="Six programmable keys"
-                body="All six keys act on the currently selected chat. Choose a printed keycap label and assign its command separately."
+                body="All six keys act on the currently selected chat. Choose a Microdex icon and assign its command separately."
               />
               <GuideItem
                 styles={styles}
@@ -3166,15 +3214,15 @@ export default function ControllerScreen() {
                 styles={styles}
                 theme={theme}
                 icon="label-outline"
-                title="Codex Micro keycaps"
-                body="The licensed keycap artwork keeps its familiar default: GIT commits, PR opens a pull request, YOLO inserts :yolo:, and so on. Microdex remains an independent companion and every slot can be reassigned."
+                title="Microdex key icons"
+                body="Every icon uses the open-source Tabler family or original Microdex typography. GIT commits, PR opens a pull request, YOLO inserts :yolo:, and every slot can be reassigned."
               />
 
               <View style={styles.guideSectionIntro}>
                 <Text style={styles.guideSectionTitle}>Assignable keys</Text>
                 <Text style={styles.guideSectionBody}>
                   These are the commands Microdex can execute. Open Customize keys, pick a
-                  keycap from the tray artwork, confirm or change its command, and save.
+                  icon from the key tray, confirm or change its command, and save.
                 </Text>
               </View>
               {guideGroups.map((group) => (
@@ -3221,7 +3269,7 @@ export default function ControllerScreen() {
                     accessibilityLabel="Close settings"
                     onPress={() => setSettingsVisible(false)}
                     style={styles.closeButton}>
-                    <CentralIcon name="close" size={18} color={theme.text} />
+                    <MicrodexIcon name="close" size={18} color={theme.text} />
                   </Pressable>
                 </View>
               </>
@@ -3247,7 +3295,7 @@ export default function ControllerScreen() {
                       commandCopied && styles.settingsCopyChipDone,
                       pressed && styles.gateButtonPressed,
                     ]}>
-                    <CentralIcon
+                    <MicrodexIcon
                       name={commandCopied ? 'check' : 'copy'}
                       size={14}
                       color={commandCopied ? theme.online : theme.textMuted}
@@ -3262,12 +3310,12 @@ export default function ControllerScreen() {
                     styles.settingsPrimaryButton,
                     pressed && styles.gateButtonPressed,
                   ]}>
-                  <CentralIcon name="qrCode" size={16} color={theme.bg} />
+                  <MicrodexIcon name="qrCode" size={16} color={theme.bg} />
                   <Text style={styles.settingsPrimaryButtonText}>Scan pairing code</Text>
                 </Pressable>
                 {noticeError ? (
                   <View style={[styles.notice, styles.noticeError]}>
-                    <CentralIcon name="alert" size={16} color={theme.dangerText} />
+                    <MicrodexIcon name="alert" size={16} color={theme.dangerText} />
                     <Text style={[styles.noticeText, styles.noticeTextError]}>{notice}</Text>
                   </View>
                 ) : null}
@@ -3288,7 +3336,7 @@ export default function ControllerScreen() {
                           void Haptics.selectionAsync();
                         }}
                         style={[styles.themeSegmentOption, active && styles.themeSegmentOptionActive]}>
-                        <CentralIcon
+                        <MicrodexIcon
                           name={option === 'dark' ? 'moon' : 'sun'}
                           size={15}
                           color={active ? theme.text : theme.textMuted}
@@ -3341,7 +3389,7 @@ export default function ControllerScreen() {
                   }}
                   style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
                   <Text style={styles.settingsLinkTitle}>Customize keys</Text>
-                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
+                  <MicrodexIcon name="chevronRight" size={18} color={theme.textFaint} />
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
@@ -3351,7 +3399,7 @@ export default function ControllerScreen() {
                   }}
                   style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
                   <Text style={styles.settingsLinkTitle}>Controls guide</Text>
-                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
+                  <MicrodexIcon name="chevronRight" size={18} color={theme.textFaint} />
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
@@ -3359,7 +3407,7 @@ export default function ControllerScreen() {
                   onPress={() => void copyDiagnostics()}
                   style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
                   <Text style={styles.settingsLinkTitle}>Copy diagnostics</Text>
-                  <CentralIcon name="copy" size={16} color={theme.textFaint} />
+                  <MicrodexIcon name="copy" size={16} color={theme.textFaint} />
                 </Pressable>
               </View>
 
@@ -3378,7 +3426,7 @@ export default function ControllerScreen() {
                   <Text style={styles.settingsLinkTitle}>
                     {demoMode ? 'Exit offline preview' : 'Explore without a Mac'}
                   </Text>
-                  <MaterialCommunityIcons
+                  <MicrodexIcon
                     name={demoMode ? 'exit-to-app' : 'play-outline'}
                     size={18}
                     color={theme.textFaint}
@@ -3393,7 +3441,7 @@ export default function ControllerScreen() {
                       pressed && styles.settingsLinkRowPressed,
                     ]}>
                     <Text style={styles.settingsLinkTitle}>Pair a real Mac</Text>
-                    <CentralIcon name="qrCode" size={16} color={theme.textFaint} />
+                    <MicrodexIcon name="qrCode" size={16} color={theme.textFaint} />
                   </Pressable>
                 ) : null}
               </View>
@@ -3405,7 +3453,7 @@ export default function ControllerScreen() {
                   onPress={() => showInfoSheet('privacy')}
                   style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
                   <Text style={styles.settingsLinkTitle}>Privacy Policy</Text>
-                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
+                  <MicrodexIcon name="chevronRight" size={18} color={theme.textFaint} />
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
@@ -3427,14 +3475,14 @@ export default function ControllerScreen() {
                   onPress={() => showInfoSheet('support')}
                   style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
                   <Text style={styles.settingsLinkTitle}>Support</Text>
-                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
+                  <MicrodexIcon name="chevronRight" size={18} color={theme.textFaint} />
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
                   onPress={() => showInfoSheet('licenses')}
                   style={({ pressed }) => [styles.settingsLinkRow, pressed && styles.settingsLinkRowPressed]}>
                   <Text style={styles.settingsLinkTitle}>Licenses & Attributions</Text>
-                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
+                  <MicrodexIcon name="chevronRight" size={18} color={theme.textFaint} />
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
@@ -3446,7 +3494,7 @@ export default function ControllerScreen() {
                       Version {appInfo.version} ({appInfo.buildNumber})
                     </Text>
                   </View>
-                  <CentralIcon name="chevronRight" size={18} color={theme.textFaint} />
+                  <MicrodexIcon name="chevronRight" size={18} color={theme.textFaint} />
                 </Pressable>
               </View>
 
@@ -3495,7 +3543,7 @@ export default function ControllerScreen() {
                       accessibilityLabel="Close data processing information"
                       onPress={declineAiConsent}
                       style={styles.closeButton}>
-                      <CentralIcon name="close" size={19} color={theme.text} />
+                      <MicrodexIcon name="close" size={19} color={theme.text} />
                     </Pressable>
                   </View>
                 </>
@@ -3530,7 +3578,7 @@ export default function ControllerScreen() {
                     pressed && styles.settingsLinkRowPressed,
                   ]}>
                   <Text style={styles.inlineLinkText}>Read the full Privacy Policy</Text>
-                  <CentralIcon name="link" size={16} color={theme.textMuted} />
+                  <MicrodexIcon name="link" size={16} color={theme.textMuted} />
                 </Pressable>
               </ScrollView>
               <View style={styles.consentButtons}>
@@ -3577,7 +3625,7 @@ export default function ControllerScreen() {
                         pressed && styles.gateButtonPressed,
                       ]}>
                       <Text style={styles.consentPrimaryButtonText}>CONTINUE</Text>
-                      <CentralIcon name="check" size={18} color={theme.bg} />
+                      <MicrodexIcon name="check" size={18} color={theme.bg} />
                     </Pressable>
                   </>
                 )}
@@ -3623,7 +3671,7 @@ export default function ControllerScreen() {
                       accessibilityLabel="Close information"
                       onPress={() => setInfoSheet(null)}
                       style={styles.closeButton}>
-                      <CentralIcon name="close" size={19} color={theme.text} />
+                      <MicrodexIcon name="close" size={19} color={theme.text} />
                     </Pressable>
                   </View>
                 </>
@@ -3643,7 +3691,7 @@ export default function ControllerScreen() {
                       onPress={() => void openExternal(PRIVACY_URL, 'Privacy Policy')}
                       style={({ pressed }) => [styles.infoAction, pressed && styles.gateButtonPressed]}>
                       <Text style={styles.infoActionText}>OPEN FULL POLICY</Text>
-                      <CentralIcon name="link" size={17} color={theme.bg} />
+                      <MicrodexIcon name="link" size={17} color={theme.bg} />
                     </Pressable>
                   </>
                 ) : infoSheet === 'support' ? (
@@ -3657,28 +3705,28 @@ export default function ControllerScreen() {
                       onPress={() => void openExternal(SUPPORT_URL, 'Microdex Support')}
                       style={({ pressed }) => [styles.infoAction, pressed && styles.gateButtonPressed]}>
                       <Text style={styles.infoActionText}>OPEN SUPPORT</Text>
-                      <CentralIcon name="link" size={17} color={theme.bg} />
+                      <MicrodexIcon name="link" size={17} color={theme.bg} />
                     </Pressable>
                   </>
                 ) : infoSheet === 'licenses' ? (
                   <>
                     <Text style={styles.infoLead}>Open source, with attribution.</Text>
                     <Text style={styles.infoParagraph}>
-                      Microdex is distributed under the MIT License. The optional Native Micro channel contains MIT-licensed work with its original notices. Codex Micro keycap artwork is included with permission and remains the property of its respective rights holders.
+                      Microdex is distributed under the MIT License. Interface icons come from Tabler Icons under the MIT License; a few product-specific marks and text glyphs are original Microdex artwork.
                     </Text>
                     <Pressable
                       accessibilityRole="link"
                       onPress={() => void openExternal(LICENSE_URL, 'Microdex License')}
                       style={({ pressed }) => [styles.infoSecondaryAction, pressed && styles.gateButtonPressed]}>
                       <Text style={styles.infoSecondaryActionText}>MICRODEX LICENSE</Text>
-                      <CentralIcon name="link" size={16} color={theme.text} />
+                      <MicrodexIcon name="link" size={16} color={theme.text} />
                     </Pressable>
                     <Pressable
                       accessibilityRole="link"
                       onPress={() => void openExternal(THIRD_PARTY_LICENSE_URL, 'Third-party licenses')}
                       style={({ pressed }) => [styles.infoSecondaryAction, pressed && styles.gateButtonPressed]}>
                       <Text style={styles.infoSecondaryActionText}>THIRD-PARTY NOTICES</Text>
-                      <CentralIcon name="link" size={16} color={theme.text} />
+                      <MicrodexIcon name="link" size={16} color={theme.text} />
                     </Pressable>
                   </>
                 ) : (
@@ -3695,7 +3743,7 @@ export default function ControllerScreen() {
                       onPress={() => void openExternal(PROJECT_URL, 'Microdex repository')}
                       style={({ pressed }) => [styles.infoAction, pressed && styles.gateButtonPressed]}>
                       <Text style={styles.infoActionText}>OPEN SOURCE REPOSITORY</Text>
-                      <CentralIcon name="link" size={17} color={theme.bg} />
+                      <MicrodexIcon name="link" size={17} color={theme.bg} />
                     </Pressable>
                   </>
                 )}
@@ -3723,7 +3771,7 @@ export default function ControllerScreen() {
               accessibilityLabel="Close QR scanner"
               onPress={() => setScannerVisible(false)}
               style={styles.scannerClose}>
-              <CentralIcon name="close" size={23} color="#FFFFFF" />
+              <MicrodexIcon name="close" size={23} color="#FFFFFF" />
             </Pressable>
             <Text style={styles.scannerTitle}>Scan your computer</Text>
             <View style={styles.scannerHeaderSpacer} />

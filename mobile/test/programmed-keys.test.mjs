@@ -9,48 +9,44 @@ import {
   parseProgrammedKeys,
   programmedActionId,
 } from '../lib/programmed-keys.ts';
-import {
-  OFFICIAL_CODEX_MICRO_GLYPHS,
-  OFFICIAL_CODEX_MICRO_KEYCAP_LEGENDS,
-} from '../lib/official-codex-micro-glyphs.ts';
+import { KEYCAP_CATALOG } from '../lib/keycap-catalog.ts';
 
-test('the official Codex Micro artwork covers every physical keycap', () => {
+test('the Microdex icon catalog covers every stable key identifier', () => {
   assert.deepEqual(
-    Object.keys(OFFICIAL_CODEX_MICRO_KEYCAP_LEGENDS).sort(),
+    KEYCAP_CATALOG.map(({ id }) => id).sort(),
     [...MICRO_KEYCAP_IDS].sort(),
   );
-
-  for (const [keycapId, legend] of Object.entries(
-    OFFICIAL_CODEX_MICRO_KEYCAP_LEGENDS,
-  )) {
-    if (['empty', 'yolo', 'yeet'].includes(legend)) continue;
-    assert.ok(
-      OFFICIAL_CODEX_MICRO_GLYPHS[legend],
-      `${keycapId} points at missing official artwork ${legend}`,
-    );
+  for (const keycap of KEYCAP_CATALOG) {
+    assert.ok(keycap.icon, `${keycap.id} needs a redistributable icon alias`);
   }
 });
 
-test('the six default controls use their official legends', () => {
+test('the six default controls use distinct Microdex icon aliases', () => {
   assert.deepEqual(
     Object.fromEntries(
       ['FAST', 'APPR', 'REJ', 'SPLIT', 'MIC', 'CODEX'].map((keycapId) => [
         keycapId,
-        OFFICIAL_CODEX_MICRO_KEYCAP_LEGENDS[keycapId],
+        KEYCAP_CATALOG.find(({ id }) => id === keycapId)?.icon,
       ]),
     ),
     {
-      FAST: 'lightning-outline',
-      APPR: 'check-circle',
-      REJ: 'x-circle',
-      SPLIT: 'worktree',
-      MIC: 'mic',
-      CODEX: 'codex',
+      FAST: 'lightning-bolt-outline',
+      APPR: 'check-circle-outline',
+      REJ: 'close-circle-outline',
+      SPLIT: 'call-split',
+      MIC: 'microphone-outline',
+      CODEX: 'robot-outline',
     },
+  );
+  assert.equal(
+    new Set(['FAST', 'APPR', 'REJ', 'SPLIT', 'MIC', 'CODEX'].map(
+      (keycapId) => KEYCAP_CATALOG.find(({ id }) => id === keycapId)?.icon,
+    )).size,
+    6,
   );
 });
 
-test('printed Codex Micro keycaps stay separate from command ids', () => {
+test('stable key identifiers stay separate from command ids', () => {
   assert.equal(MICRO_KEYCAP_IDS.length, 38);
   assert.equal(new Set(MICRO_KEYCAP_IDS).size, MICRO_KEYCAP_IDS.length);
   for (const keycapId of [
@@ -61,7 +57,7 @@ test('printed Codex Micro keycaps stay separate from command ids', () => {
   }
 });
 
-test('every official non-blank keycap has a default action', async () => {
+test('every non-blank key identifier has a default action', async () => {
   const { defaultActionForKeycap, DEFAULT_KEYCAP_PROMPTS } = await import(
     '../lib/programmed-keys.ts'
   );
@@ -71,7 +67,7 @@ test('every official non-blank keycap has a default action', async () => {
       continue;
     }
     const action = defaultActionForKeycap(keycapId);
-    assert.ok(action, `${keycapId} needs an official default`);
+    assert.ok(action, `${keycapId} needs a compatibility default`);
     if (keycapId === 'YOLO' || keycapId === 'YEET') {
       assert.equal(action.type, 'prompt');
       assert.equal(action.text, DEFAULT_KEYCAP_PROMPTS[keycapId]);
@@ -149,7 +145,7 @@ test('fake legacy keycap behavior is removed without discarding the cap', () => 
   ]);
 });
 
-test('malformed storage falls back to the official default layout', () => {
+test('malformed storage falls back to the stable default layout', () => {
   assert.deepEqual(parseProgrammedKeys('not json'), defaultProgrammedKeys());
   assert.deepEqual(
     parseProgrammedKeys(JSON.stringify([null])),

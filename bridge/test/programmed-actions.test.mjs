@@ -31,7 +31,7 @@ const mobileKeysSource = await readFile(
   'utf8',
 );
 
-test('the readable Codex Micro keycap catalog is reproduced exactly', () => {
+test('the stable key identifier catalog is reproduced exactly', () => {
   assert.equal(new Set(CODEX_KEYCAP_IDS).size, CODEX_KEYCAP_IDS.length);
   assert.deepEqual(CODEX_KEYCAP_IDS, [
     ...DEFAULT_KEYCAP_IDS,
@@ -46,7 +46,7 @@ test('the readable Codex Micro keycap catalog is reproduced exactly', () => {
   }
 });
 
-test('official Codex Micro keycaps resolve to their documented defaults', () => {
+test('stable key identifiers resolve to their documented defaults', () => {
   assert.equal(DEFAULT_KEYCAP_COMMANDS.FAST, 'composer.toggleFastMode');
   assert.equal(DEFAULT_KEYCAP_COMMANDS.APPR, 'approval.approve');
   assert.equal(DEFAULT_KEYCAP_COMMANDS.REJ, 'approval.decline');
@@ -62,19 +62,19 @@ test('official Codex Micro keycaps resolve to their documented defaults', () => 
   assert.equal(DEFAULT_KEYCAP_COMMANDS.EMPT1, undefined);
 });
 
-test('printed keycap ids are never executable command ids', () => {
+test('legacy key identifiers are never executable command ids', () => {
   for (const keycapId of OPTIONAL_KEYCAP_IDS) {
     assert.equal(getProgrammedAction(keycapId), null, keycapId);
   }
   for (const keycapId of ['GIT', 'PR', 'BUG', 'YOLO', 'DEL', 'NEW']) {
     assert.throws(
       () => normalizeProgrammedAction({ actionId: keycapId }),
-      /printed keycap, not a Codex action/i,
+      /legacy key identifier, not a Codex action/i,
     );
   }
 });
 
-test('programmable actions cover the official Micro command set', () => {
+test('programmable actions cover the public Microdex command set', () => {
   const ids = CODEX_PROGRAMMABLE_ACTIONS.map((action) => action.id);
   for (const required of [
     'composer.toggleFastMode',
@@ -213,7 +213,7 @@ test('every desktop action used by a verified command is allow-listed', () => {
   }
 });
 
-test('Native Micro does not bypass Accessibility for visible Codex controls', () => {
+test('the standard bridge requires Accessibility for visible Codex controls', () => {
   const availability = buildActionAvailability({
     state: {
       selected: {
@@ -227,9 +227,6 @@ test('Native Micro does not bypass Accessibility for visible Codex controls', ()
       available: true,
       trusted: false,
       running: true,
-    },
-    native: {
-      connected: true,
     },
   });
   for (const commandId of [
@@ -256,9 +253,6 @@ test('task-scoped commands are unavailable until a Codex task is active', () => 
       available: true,
       trusted: true,
       running: true,
-    },
-    native: {
-      connected: false,
     },
   });
   for (const commandId of [

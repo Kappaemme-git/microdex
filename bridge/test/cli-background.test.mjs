@@ -18,6 +18,10 @@ const relaySource = await readFile(
   new URL('../lib/remote-relay.mjs', import.meta.url),
   'utf8',
 );
+const packageJson = JSON.parse(await readFile(
+  new URL('../../package.json', import.meta.url),
+  'utf8',
+));
 
 test('setup installs an automatic macOS LaunchAgent backed by a stable runtime', () => {
   assert.match(cliSource, /microdex setup/);
@@ -59,7 +63,7 @@ test('pairing prefers a persistent relay and keeps Quick Tunnel as a fallback', 
 });
 
 test('the CLI exposes lifecycle and emergency revocation commands', () => {
-  for (const command of ['status', 'restart', 'native', 'revoke-all', 'uninstall']) {
+  for (const command of ['status', 'restart', 'revoke-all', 'uninstall']) {
     assert.match(cliSource, new RegExp(`case '${command}'`));
   }
   assert.match(cliSource, /launchctl/);
@@ -69,11 +73,12 @@ test('the CLI exposes lifecycle and emergency revocation commands', () => {
   assert.match(cliSource, /rm\(tokenPath/);
 });
 
-test('native mode is explicit, reversible, and never modifies the Codex app bundle', () => {
-  assert.match(cliSource, /Continue\? \[Y\/n\]/);
-  assert.match(cliSource, /NODE_OPTIONS: `--require=/);
-  assert.match(cliSource, /case 'native'/);
-  assert.match(cliSource, /operation === 'stop'/);
-  assert.match(cliSource, /relaunchCodexNormally/);
-  assert.doesNotMatch(cliSource, /cp .*ChatGPT\.app|writeFile\(.*ChatGPT\.app/s);
+test('the public CLI contains no native hardware impersonation mode', () => {
+  assert.doesNotMatch(cliSource, /case 'native'|microdex native|NODE_OPTIONS: `--require=/);
+  assert.doesNotMatch(serverSource, /nativeShim|applyNative/);
+  assert.equal(packageJson.version, '0.1.17');
+  assert.equal(
+    packageJson.files.some((entry) => /native-shim|experiments/.test(entry)),
+    false,
+  );
 });

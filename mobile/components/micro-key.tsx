@@ -1,13 +1,11 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ComponentProps } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
+import { MicrodexIcon, type MicrodexIconName } from '@/components/microdex-icon';
 
 type MicroKeyProps = {
   label: string;
   sublabel?: string;
-  icon?: IconName;
+  icon?: MicrodexIconName;
   tone?: 'agent' | 'command';
   glow?: string;
   active?: boolean;
@@ -47,7 +45,7 @@ export function MicroKey({
         <View style={[styles.lightWell, { backgroundColor: glow, shadowColor: glow }]} />
       )}
       {icon ? (
-        <MaterialCommunityIcons
+        <MicrodexIcon
           name={icon}
           size={tone === 'agent' ? 22 : 25}
           color={active ? '#0A171D' : '#182127'}

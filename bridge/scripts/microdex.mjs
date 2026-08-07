@@ -6,7 +6,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
-import { fileURLToPath } from 'node:url';
 import qrcode from 'qrcode-terminal';
 import {
   printCheck,
@@ -22,10 +21,6 @@ import {
   BRIDGE_VERSION,
 } from '../lib/package-info.mjs';
 import { retryOperation } from '../lib/retry-operation.mjs';
-import {
-  nativeShimPaths,
-  requestNativeShim,
-} from '../lib/native-shim-client.mjs';
 import { deletePersistentRelayRoom } from '../lib/remote-relay.mjs';
 import { REVIEW_PAIRING_TTL_MS } from '../lib/pairing-session.mjs';
 
@@ -54,21 +49,6 @@ const launchDomain = `gui/${process.getuid?.() ?? 0}`;
 const codexBinary =
   process.env.MICRODEX_CODEX_BIN ||
   '/Applications/ChatGPT.app/Contents/Resources/codex';
-const codexDesktopApp = process.env.MICRODEX_CODEX_APP || '/Applications/ChatGPT.app';
-const nativePaths = nativeShimPaths(stateDir);
-const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const nativeBridgePath = path.resolve(
-  scriptDir,
-  '../native-shim/bridge.mjs',
-);
-const nativePreloadPath = path.resolve(
-  scriptDir,
-  '../native-shim/shim/preload.cjs',
-);
-const nativeSelfTestPath = path.resolve(
-  scriptDir,
-  '../native-shim/self-test.mjs',
-);
 
 function printHelp() {
   printHeader(VERSION);
@@ -80,8 +60,6 @@ function printHelp() {
     microdex status     Check the background bridge
     microdex restart    Restart the background bridge
     microdex revoke-all Revoke every paired phone and rotate the access key
-    microdex native     Relaunch Codex with real Micro input + lighting
-    microdex native status|stop|test
     microdex uninstall  Remove the background service
     microdex up         Run the bridge in this Terminal
     microdex doctor     Check this Mac before pairing
@@ -235,221 +213,6 @@ async function waitForBridge(maxWaitMs = 15_000) {
     await new Promise((resolve) => setTimeout(resolve, 350));
   }
   return false;
-}
-
-function processIsRunning(pid) {
-  if (!Number.isInteger(pid) || pid <= 1) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readPid(filePath) {
-  try {
-    const pid = Number((await readFile(filePath, 'utf8')).trim());
-    return Number.isInteger(pid) ? pid : null;
-  } catch {
-    return null;
-  }
-}
-
-async function waitForFile(filePath, timeoutMs = 5_000) {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    if (await exists(filePath)) return true;
-    await new Promise((resolve) => setTimeout(resolve, 60));
-  }
-  return false;
-}
-
-async function stopNativeSidecar() {
-  const bridgePid = await readPid(nativePaths.bridgePid);
-  if (processIsRunning(bridgePid)) {
-    process.kill(bridgePid, 'SIGTERM');
-    for (let attempt = 0; attempt < 50 && processIsRunning(bridgePid); attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 40));
-    }
-  }
-  await Promise.all([
-    rm(nativePaths.deviceSocket, { force: true }),
-    rm(nativePaths.controlSocket, { force: true }),
-    rm(nativePaths.bridgePid, { force: true }),
-    rm(nativePaths.codexPid, { force: true }),
-  ]);
-}
-
-function codexDesktopExecutable() {
-  const result = spawnSync(
-    'defaults',
-    ['read', path.join(codexDesktopApp, 'Contents', 'Info'), 'CFBundleExecutable'],
-    { encoding: 'utf8', timeout: 5_000 },
-  );
-  const executableName = result.status === 0 ? result.stdout.trim() : '';
-  if (!executableName) return null;
-  return {
-    executableName,
-    path: path.join(codexDesktopApp, 'Contents', 'MacOS', executableName),
-  };
-}
-
-async function waitForNativeConnection(timeoutMs = 18_000) {
-  const startedAt = Date.now();
-  let latest = null;
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      latest = await requestNativeShim(
-        { type: 'status' },
-        { socketPath: nativePaths.controlSocket, timeoutMs: 750 },
-      );
-      if (latest.connected) return latest;
-    } catch {
-      // The native bridge or Codex may still be starting.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 180));
-  }
-  return latest;
-}
-
-async function relaunchCodexNormally() {
-  await run('osascript', ['-e', 'tell application id "com.openai.codex" to quit'], {
-    allowFailure: true,
-  });
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  await run('open', [codexDesktopApp], { allowFailure: true });
-}
-
-async function nativeMode() {
-  const operation = (process.argv[3] || 'start').toLowerCase();
-  if (operation === 'test') {
-    printHeader(VERSION);
-    const result = await run(process.execPath, [nativeSelfTestPath], {
-      inherit: true,
-      allowFailure: true,
-    });
-    if (result.code) process.exitCode = result.code;
-    return;
-  }
-  if (operation === 'status') {
-    printHeader(VERSION);
-    try {
-      const state = await requestNativeShim(
-        { type: 'status' },
-        { socketPath: nativePaths.controlSocket },
-      );
-      if (state.connected) printCheck('Native Micro', 'Connected inside Codex');
-      else printWarning('Native bridge online', 'Codex has not opened the synthetic Micro');
-    } catch {
-      printFailure('Native Micro is not running');
-      process.exitCode = 1;
-    }
-    return;
-  }
-  if (operation === 'stop') {
-    printHeader(VERSION);
-    await stopNativeSidecar();
-    await relaunchCodexNormally();
-    printCheck('Native Micro stopped', 'Codex reopened normally');
-    return;
-  }
-  if (!['start', 'up'].includes(operation)) {
-    throw new Error('Use microdex native, native status, native stop, or native test.');
-  }
-  if (process.platform !== 'darwin') {
-    throw new Error('Native Micro currently requires macOS.');
-  }
-  if (!await exists(codexDesktopApp)) {
-    throw new Error(`Codex desktop was not found at ${codexDesktopApp}.`);
-  }
-  if (!await bridgeHealth()) {
-    throw new Error('Run “microdex setup” first so the paired phone bridge stays online.');
-  }
-  const desktop = codexDesktopExecutable();
-  if (!desktop || !await exists(desktop.path)) {
-    throw new Error('Could not find the Codex desktop executable.');
-  }
-
-  printHeader(VERSION);
-  console.log(`  ${ui.bold('Native Micro mode')}\n`);
-  console.log(`  ${ui.dim('Codex will close and reopen once. App files are not modified.')}`);
-  console.log(`  ${ui.dim('The phone will then use Codex’s own hardware input and lighting channel.')}\n`);
-  if (process.stdin.isTTY) {
-    const prompt = createInterface({ input: process.stdin, output: process.stdout });
-    const answer = (await prompt.question('  Continue? [Y/n] ')).trim().toLowerCase();
-    prompt.close();
-    if (answer && answer !== 'y' && answer !== 'yes') {
-      printWarning('Native mode cancelled');
-      return;
-    }
-  } else if (!process.argv.includes('--yes')) {
-    throw new Error('Native mode relaunches Codex. Run it in Terminal to confirm.');
-  }
-
-  printStep(1, 'Starting the private hardware channel');
-  await mkdir(nativePaths.directory, { recursive: true, mode: 0o700 });
-  await stopNativeSidecar();
-  const bridge = spawn(process.execPath, [nativeBridgePath], {
-    detached: true,
-    stdio: 'ignore',
-    env: {
-      ...process.env,
-      NODE_OPTIONS: '',
-      CODEX_MICRO_SOCKET: nativePaths.deviceSocket,
-      CODEX_MICRO_CONTROL_SOCKET: nativePaths.controlSocket,
-      CODEX_MICRO_BATTERY: '100',
-    },
-  });
-  bridge.unref();
-  await writeFile(nativePaths.bridgePid, `${bridge.pid}\n`, { mode: 0o600 });
-  if (
-    !await waitForFile(nativePaths.deviceSocket) ||
-    !await waitForFile(nativePaths.controlSocket)
-  ) {
-    await stopNativeSidecar();
-    throw new Error('The private hardware channel did not start.');
-  }
-  printCheck('Hardware channel', 'Ready');
-
-  printStep(2, 'Relaunching Codex with the Micro attached');
-  await run('osascript', ['-e', 'tell application id "com.openai.codex" to quit'], {
-    allowFailure: true,
-  });
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const running = spawnSync('pgrep', ['-x', desktop.executableName], {
-      encoding: 'utf8',
-      timeout: 1_000,
-    }).status === 0;
-    if (!running) break;
-    await new Promise((resolve) => setTimeout(resolve, 70));
-  }
-  const codex = spawn(desktop.path, [], {
-    detached: true,
-    stdio: 'ignore',
-    env: {
-      ...process.env,
-      CODEX_MICRO_SOCKET: nativePaths.deviceSocket,
-      CODEX_MICRO_SHIM_LOG: path.join(nativePaths.directory, 'shim.log'),
-      CODEX_MICRO_PREVIOUS_NODE_OPTIONS: process.env.NODE_OPTIONS || '',
-      NODE_OPTIONS: `--require="${nativePreloadPath}"`,
-    },
-  });
-  codex.unref();
-  await writeFile(nativePaths.codexPid, `${codex.pid}\n`, { mode: 0o600 });
-
-  const native = await waitForNativeConnection();
-  if (!native?.connected) {
-    printWarning(
-      'Codex did not detect Native Micro',
-      'Run microdex native test; this Codex version may need a compatibility update',
-    );
-    process.exitCode = 1;
-    return;
-  }
-  printCheck('Native Micro', 'Connected inside Codex');
-  printCheck('Phone bridge', 'Buttons and native lighting are live');
-  console.log(`\n  ${ui.dim('Use “microdex native stop” to return to normal Codex mode.')}\n`);
 }
 
 async function requestPairingDetails({ review = false } = {}) {
@@ -875,9 +638,6 @@ try {
       break;
     case 'revoke-all':
       await revokeAll();
-      break;
-    case 'native':
-      await nativeMode();
       break;
     case 'uninstall':
       await uninstall();

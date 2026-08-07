@@ -30,8 +30,8 @@ Generate it as close to submission as practical.
 
 Attach the QR image privately in App Store Connect together with the exact CLI
 and bridge versions. Do not paste the decoded URL in a public issue, repository,
-screenshot, or release note. Also attach the written authorization for any
-third-party keycap artwork shown in the app.
+screenshot, or release note. Interface icons use Tabler Icons under the MIT
+License; the notice is available from **Settings → Licenses & Attributions**.
 
 Suggested review instructions:
 

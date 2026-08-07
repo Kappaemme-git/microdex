@@ -1,31 +1,24 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ComponentProps } from 'react';
-
+import type { MicrodexIconName } from '@/components/microdex-icon';
 import type { MicroKeycapId, ProgrammableCommandId } from '@/lib/programmed-keys';
 
-export type KeycapIcon = ComponentProps<typeof MaterialCommunityIcons>['name'];
+export type KeycapIcon = MicrodexIconName;
 
 export type KeycapDescriptor = {
   id: MicroKeycapId;
   /** Human-readable name of the printed symbol, used by screen readers. */
   name: string;
-  /** Closest match to the silkscreen on the physical cap. */
+  /** Microdex-owned semantic icon alias rendered through Tabler. */
   icon: KeycapIcon;
   /**
-   * Commands this cap is printed for. Choosing one of them in the editor selects
-   * this cap, so the deck never shows a label that contradicts what the key
-   * does. A cap can cover a family, e.g. NAV for both navigation directions.
-   * Caps without any are blanks or prompt-only legends (YOLO / YEET).
+   * Commands historically associated with this identifier. Choosing one in the
+   * editor selects the same identifier so older saved layouts remain valid.
    */
   commands?: readonly ProgrammableCommandId[];
 };
 
 /**
- * The printed caps shipped with the Codex Micro, in tray order.
- *
- * Defaults match the official Codex desktop keycap catalog. Caps and commands
- * stay re-assignable: a cap is still a piece of plastic and can sit on any
- * switch.
+ * Stable key identifiers retained in their historical order. These are storage
+ * and bridge compatibility IDs, not claims about third-party artwork.
  */
 export const KEYCAP_CATALOG: readonly KeycapDescriptor[] = [
   { id: 'CODEX', name: 'Codex', icon: 'robot-outline', commands: ['composer.submit'] },
@@ -140,7 +133,7 @@ export function keycapDescriptor(id: MicroKeycapId | null | undefined) {
 }
 
 /**
- * The cap printed for a command, used to pre-select one in the editor. The first
+ * The key identifier suggested for a command. The first
  * catalog entry wins when several caps carry the same command, which is why the
  * catalog is ordered by how obvious the pairing is.
  */

@@ -17,9 +17,8 @@ Control your local Codex runtime directly from your iPhone.
 
 ---
 
-Microdex is an independent React Native client for Codex, inspired by the Codex
-Micro control layout: six RGB Task Keys, six Command Keys, an analog joystick,
-and a reasoning dial.
+Microdex is an independent React Native controller for Codex, built around six
+programmable keys, dedicated command keys, a joystick, and a reasoning dial.
 
 It runs on iOS through Expo and connects to a desktop bridge backed by Codex
 App Server. The pairing QR uses a stable encrypted Cloudflare relay, so the
@@ -32,7 +31,7 @@ phone can use Wi-Fi or mobile data without sharing the Mac's network.
 ## ✨ Features
 
 - 📱 Control Codex remotely from your iPhone
-- 🎮 Codex Micro-inspired interface
+- 🎮 Focused hardware-inspired interface
 - ⚡ Fast Mode toggle
 - 🧠 Reasoning control
 - 🎤 Voice input
@@ -98,27 +97,6 @@ bridge starts the installed Codex App Server and:
 
 The microphone key opens the mobile composer. Use iOS keyboard
 dictation, then press the Codex key to send without macOS Accessibility access.
-
----
-
-## 🎮 Native Micro Mode
-
-For the closest parity with the physical Codex Micro, start the optional native
-channel after `microdex setup`:
-
-```bash
-microdex native
-```
-
-The command asks before closing and reopening Codex. It does not modify the
-Codex app bundle. Codex sees a local synthetic Micro, so the standard Fast,
-approval, split, microphone, send, joystick, dial, task-light, and frame-light
-messages use Codex's own hardware channel. The six phone keys remain
-programmable; actions that do not exist on the physical Micro continue through
-the authenticated standard bridge.
-
-Use `microdex native status`, `microdex native test`, or
-`microdex native stop` to inspect, verify, or leave the mode.
 
 ---
 
@@ -220,10 +198,9 @@ See [PRIVACY.md](PRIVACY.md) for the project privacy policy and
 ## ⚠️ Current Limitation
 
 Microdex controls turns that it resumes or starts through its own Codex App
-Server connection. The original physical keyboard uses a private first-party
-desktop channel, so a third-party app cannot attach to an already in-flight turn
-owned by a different desktop process. Select the task in Microdex before sending
-new work to keep subsequent status and approvals live.
+Server connection. A third-party connection cannot attach to an already
+in-flight turn owned by a different desktop process. Select the task in
+Microdex before sending new work to keep subsequent status and approvals live.
 
 Expo Go is used only for development previews. Public versions are distributed
 as signed EAS builds through TestFlight and the App Store.
@@ -232,7 +209,5 @@ as signed EAS builds through TestFlight and the App Store.
 
 ## ❤️ Attribution
 
-The optional native channel is adapted from the MIT-licensed
-`maxxspotter/codex-micro-app`, including its `node-hid` interception layer based
-on Marcel Pociot's MIT-licensed Codex Micro emulator. Both license notices are
-included in `bridge/native-shim/`.
+Microdex interface icons use [Tabler Icons](https://tabler.io/icons), licensed
+under MIT. Full notices are included in `THIRD_PARTY_NOTICES.md`.

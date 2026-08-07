@@ -24,11 +24,11 @@ SOFTWARE.
 
 Third-party notices
 
-The optional native channel in `bridge/native-shim/` is adapted from the
+The archived experiment in `experiments/native-micro/` is adapted from the
 MIT-licensed `maxxspotter/codex-micro-app`, including its `node-hid`
 interception layer based on Marcel Pociot's MIT-licensed Codex Micro emulator.
-Both license notices are kept in `bridge/native-shim/LICENSE.txt` and
-`bridge/native-shim/THIRD_PARTY_LICENSE.txt` and must be preserved in any
+Both license notices are kept in `experiments/native-micro/LICENSE.txt` and
+`experiments/native-micro/THIRD_PARTY_LICENSE.txt` and must be preserved in any
 redistribution.
 
 Trademarks

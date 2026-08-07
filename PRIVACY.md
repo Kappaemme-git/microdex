@@ -1,6 +1,6 @@
 # Microdex Privacy Policy
 
-Effective date: August 4, 2026
+Effective date: August 7, 2026
 
 Microdex is maintained by the Microdex open-source project and is an independent,
 open-source mobile companion for a Codex runtime
@@ -39,13 +39,14 @@ advertising or unrelated profiling. The project only selects providers that are
 expected to protect personal data to the same or an equivalent standard as this
 policy, subject to their published terms and applicable law.
 
-The public relay is hosted on Cloudflare. Cloudflare processes network metadata
-needed to deliver and protect requests, such as IP address, request time,
-random relay path, response status, and encrypted payload size. Operational
-logs may retain limited request metadata according to the configured Cloudflare
-retention period. The relay stores a one-way digest of the Mac connector secret
-until the relay room is purged; it does not store message plaintext, phone
-credentials, or end-to-end encryption keys.
+The public relay is hosted on Cloudflare. Cloudflare processes transient network
+metadata needed to deliver and protect requests, including IP address for abuse
+rate limiting. Microdex Worker invocation logging is disabled: the project does
+not retain request URLs, request bodies, IP addresses, or per-request operational
+logs. Cloudflare exposes aggregate service metrics under its own terms. The
+relay stores a one-way digest of the Mac connector secret for up to 30 days
+after the last Mac connection, or until the relay room is purged. It does not
+store message plaintext, phone credentials, or end-to-end encryption keys.
 
 The distributed app may contact Expo services to check for signed app updates
 and Apple services used by iOS and TestFlight. Their processing is governed by

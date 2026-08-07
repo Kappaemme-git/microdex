@@ -60,7 +60,7 @@ test('the mobile controller never delegates keys to desktop keyboard shortcuts',
   assert.doesNotMatch(controllerSource, /\brunShortcut\b/);
 });
 
-test('every joystick direction controls the matching Codex Micro desktop action', () => {
+test('every joystick direction controls the matching Codex desktop action', () => {
   assert.match(controllerSource, /case 'up':/);
   assert.match(controllerSource, /case 'right':/);
   assert.match(controllerSource, /case 'down':/);
@@ -117,7 +117,7 @@ test('programmable keys have a visible manager with replace and remove controls'
   assert.match(controllerSource, /accessibilityLabel="Clear all programmable keys"/);
   assert.match(controllerSource, /setProgrammedKeys\(nextKeys\)/);
   assert.match(controllerSource, /All programmable keys cleared/);
-  assert.match(controllerSource, /<CentralIcon name="trash"/);
+  assert.match(controllerSource, /<MicrodexIcon name="trash"/);
   assert.match(controllerSource, /Choose an empty key or replace an existing one/);
 });
 
@@ -133,7 +133,7 @@ test('the controller exposes every programmable function and the in-app guide', 
   assert.doesNotMatch(controllerSource, /keycapStrip/);
   assert.doesNotMatch(controllerSource, /keycapChip/);
   assert.match(controllerSource, /PROGRAMMABLE KEY/);
-  assert.match(controllerSource, /CODEX MICRO CONTROLS/);
+  assert.match(controllerSource, /MICRODEX CONTROLS/);
   assert.match(controllerSource, /Approve and Reject/);
   assert.match(controllerSource, /Assignable keys/);
 });
@@ -271,7 +271,7 @@ test('commands provide immediate progress feedback', () => {
 
 test('the lower panel is a chat-styled one-way remote composer', () => {
   assert.match(controllerSource, /styles\.composerPanel/);
-  assert.match(controllerSource, /<CentralIcon name="chat"/);
+  assert.match(controllerSource, /<MicrodexIcon name="chat"/);
   assert.match(controllerSource, /Chat to Codex/);
   assert.match(controllerSource, /OUTPUT ON MAC/);
   assert.match(controllerSource, /Message Codex/);
@@ -327,7 +327,7 @@ test('queued messages stay visible and can be removed before sending', () => {
   assert.match(controllerSource, /\/api\/remote\/queue\/remove/);
   assert.match(controllerSource, /disabled=\{sending \|\| removing\}/);
   assert.match(controllerSource, /removeQueuedMessage\(message\.id\)/);
-  assert.match(controllerSource, /<CentralIcon name="trash"/);
+  assert.match(controllerSource, /<MicrodexIcon name="trash"/);
 });
 
 test('the header opens a left project drawer and quickly switches synced Codex chats', () => {
@@ -359,7 +359,7 @@ test('the header opens a left project drawer and quickly switches synced Codex c
   assert.match(controllerSource, /Alert\.alert\(/);
   assert.match(controllerSource, /\/api\/remote\/archive/);
   assert.match(controllerSource, /onArchive=\{archiveRemoteThread\}/);
-  assert.match(controllerSource, /<CentralIcon name="trash"/);
+  assert.match(controllerSource, /<MicrodexIcon name="trash"/);
   assert.match(chatDrawerSource, /Opens on your Mac/);
 });
 

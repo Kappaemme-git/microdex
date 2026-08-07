@@ -1,0 +1,78 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "version": "1.0",
+    "copyright": "2026 Francesco Mistero",
+    "categories": [
+      "DEVELOPER_TOOLS",
+      "PRODUCTIVITY"
+    ],
+    "release": {
+      "automaticRelease": false,
+      "phasedRelease": false
+    },
+    "info": {
+      "en-US": {
+        "title": "Microdex",
+        "subtitle": "Control Codex from your phone",
+        "description": "Microdex turns your iPhone into a focused control surface for a Codex runtime running on your own Mac.\n\nSwitch tasks, send messages, adjust reasoning, use Fast Mode, handle approval requests, control Voice Chat on the Mac, and assign actions to a customizable set of keys. A built-in offline experience lets you explore the complete interface using fictional tasks before pairing a computer.\n\nPairing uses a one-time QR code. Commands, messages, and task state are end-to-end encrypted between the paired iPhone and Mac. The relay carries encrypted data and does not receive the encryption keys. The iPhone does not capture or relay Voice Chat audio.\n\nLive control requires a user-owned Mac with macOS, Node.js 20.19 or newer, and Codex installed and signed in. The phone and Mac do not need to share the same Wi-Fi network. Microdex does not include a Codex or OpenAI account.\n\nMicrodex is free and open source. It is an independent companion and is not affiliated with or endorsed by OpenAI or Work Louder.",
+        "keywords": [
+          "developer",
+          "remote",
+          "mac",
+          "productivity",
+          "workflow",
+          "voice",
+          "automation",
+          "controller",
+          "coding",
+          "companion"
+        ],
+        "releaseNotes": "Initial release of Microdex for iPhone.",
+        "promoText": "Control your Codex workflow from iPhone with secure pairing, programmable keys, chat, Voice Chat controls, and a complete offline demo.",
+        "marketingUrl": "https://github.com/Kappaemme-git/microdex",
+        "supportUrl": "https://github.com/Kappaemme-git/microdex/blob/main/SUPPORT.md",
+        "privacyPolicyUrl": "https://github.com/Kappaemme-git/microdex/blob/main/PRIVACY.md",
+        "privacyChoicesUrl": "https://github.com/Kappaemme-git/microdex/blob/main/PRIVACY.md",
+        "screenshots": {
+          "APP_IPHONE_67": [
+            "./store/screenshots/en-US/APP_IPHONE_67/01-control-codex.png",
+            "./store/screenshots/en-US/APP_IPHONE_67/02-workflow-anywhere.png",
+            "./store/screenshots/en-US/APP_IPHONE_67/03-voice-chat.png",
+            "./store/screenshots/en-US/APP_IPHONE_67/04-control-deck.png",
+            "./store/screenshots/en-US/APP_IPHONE_67/05-encrypted-pairing.png"
+          ]
+        }
+      }
+    },
+    "advisory": {
+      "ageRatingOverride": "NONE",
+      "alcoholTobaccoOrDrugUseOrReferences": "NONE",
+      "contests": "NONE",
+      "gambling": false,
+      "gamblingSimulated": "NONE",
+      "horrorOrFearThemes": "NONE",
+      "kidsAgeBand": null,
+      "koreaAgeRatingOverride": "NONE",
+      "lootBox": false,
+      "matureOrSuggestiveThemes": "NONE",
+      "medicalOrTreatmentInformation": "NONE",
+      "profanityOrCrudeHumor": "NONE",
+      "sexualContentGraphicAndNudity": "NONE",
+      "sexualContentOrNudity": "NONE",
+      "unrestrictedWebAccess": false,
+      "violenceCartoonOrFantasy": "NONE",
+      "violenceRealistic": "NONE",
+      "violenceRealisticProlongedGraphicOrSadistic": "NONE",
+      "advertising": false,
+      "ageAssurance": false,
+      "ageRatingOverrideV2": "NONE",
+      "developerAgeRatingInfoUrl": null,
+      "gunsOrOtherWeapons": "NONE",
+      "healthOrWellnessTopics": false,
+      "messagingAndChat": false,
+      "parentalControls": false,
+      "userGeneratedContent": false
+    }
+  }
+}

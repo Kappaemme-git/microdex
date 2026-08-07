@@ -66,5 +66,5 @@ https://developer.apple.com/app-store/app-privacy-details/
 - Never submit a personal bridge token, OpenAI password, or encryption key as
   text. The QR is the only reviewer credential and remains single-use.
 - After review, run `microdex revoke-all` and shut down the dedicated review Mac.
-- Attach written authorization for any third-party keycap artwork in App Store
-  Connect and explain the independent branding in Review Notes.
+- Confirm the Tabler Icons MIT notice is reachable from the app and explain the
+  independent branding and Codex App Server integration in Review Notes.

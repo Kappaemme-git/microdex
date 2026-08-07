@@ -47,7 +47,7 @@ type ReasoningDialProps = {
   onLongPress: () => void;
 };
 
-/** Machined aluminium encoder — Codex Micro top-left dial. */
+/** Machined aluminium encoder used by the Microdex control deck. */
 export function ReasoningDial({
   mode,
   label,
