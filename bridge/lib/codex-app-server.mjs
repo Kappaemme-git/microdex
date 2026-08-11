@@ -29,6 +29,10 @@ export function serviceTierForFastMode(enabled) {
   return enabled ? 'priority' : null;
 }
 
+export function canUseThreadSnapshotAfterResumeError(error) {
+  return /already has an active writer/i.test(String(error?.message || error || ''));
+}
+
 async function resolveCodexBinary() {
   if (process.env.MICRODEX_CODEX_BIN) return process.env.MICRODEX_CODEX_BIN;
   try {
@@ -592,7 +596,15 @@ export class CodexAppServer {
         !this.#threadReasoningEfforts.has(this.#selectedThreadId)
       )
     ) {
-      await this.#resume(this.#selectedThreadId);
+      try {
+        await this.#resume(this.#selectedThreadId);
+      } catch (error) {
+        // A running Codex turn owns the task writer, so thread/resume can be
+        // rejected even though thread/list already returned a valid live
+        // snapshot. Keep the controller online with that snapshot and retry
+        // hydration on the next state read after the turn finishes.
+        if (!canUseThreadSnapshotAfterResumeError(error)) throw error;
+      }
     }
     if (this.#selectedThreadId) {
       const snapshot = this.#threadSnapshots.get(this.#selectedThreadId);
