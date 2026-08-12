@@ -339,6 +339,51 @@ function actionNotApplied(message) {
   return error;
 }
 
+async function waitForNewDesktopThread(previousThreadIds, errorMessage) {
+  const deadline = Date.now() + 6_000;
+  while (Date.now() < deadline) {
+    const threads = await codex.listThreads(30);
+    const created = threads.find((thread) => !previousThreadIds.has(thread.id));
+    if (created) {
+      codex.markSelectedThread(created.id);
+      return codex.state();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  throw actionNotApplied(errorMessage);
+}
+
+async function forkVisibleDesktopThread(threadId) {
+  const before = await codex.state();
+  const sourceThreadId = threadId || before.selectedThreadId;
+  if (!sourceThreadId) throw actionNotApplied('Select a Codex task first.');
+  const source = before.threads.find((thread) => thread.id === sourceThreadId);
+  if (!source) throw actionNotApplied('Codex task not found.');
+
+  if (before.selectedThreadId !== sourceThreadId) {
+    await executeCodexDesktopAction('select-chat', source.name);
+    codex.markSelectedThread(sourceThreadId);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  const previousThreadIds = new Set(before.threads.map((thread) => thread.id));
+  await executeCodexDesktopAction('fork-chat');
+  return waitForNewDesktopThread(
+    previousThreadIds,
+    'Codex did not create the new task.',
+  );
+}
+
+async function openVisibleDesktopThread() {
+  const before = await codex.state();
+  const previousThreadIds = new Set(before.threads.map((thread) => thread.id));
+  await executeCodexDesktopAction('new-chat');
+  return waitForNewDesktopThread(
+    previousThreadIds,
+    'Codex did not create the new task.',
+  );
+}
+
 /** Enough for a fast flick, low enough that a bad client cannot spin forever. */
 const MAX_ENCODER_STEPS = 24;
 
@@ -639,7 +684,7 @@ if(fragment.get('e2ee')==='1'&&fragment.get('keyId')&&fragment.get('key')){const
         threadId: body.threadId,
         codex,
         resolveApproval: (decision) => codex.resolveApproval(decision),
-        executeFork: (threadId) => codex.forkThread(threadId),
+        executeFork: forkVisibleDesktopThread,
         executeDesktop: executeCodexDesktopAction,
       });
       return sendJson(
@@ -648,7 +693,7 @@ if(fragment.get('e2ee')==='1'&&fragment.get('keyId')&&fragment.get('key')){const
         withVerifiedCommand(
           await remoteState(),
           normalized.commandId,
-          ['fast', 'effort', 'approve', 'decline', 'fork'].includes(
+          ['approve', 'decline'].includes(
             CODEX_PROGRAMMABLE_ACTIONS.find(
               (action) => action.id === normalized.commandId,
             )?.kind,
@@ -696,7 +741,7 @@ if(fragment.get('e2ee')==='1'&&fragment.get('keyId')&&fragment.get('key')){const
           action: 'fast',
           applied: true,
           verified: true,
-          evidence: 'codex',
+          evidence: 'desktop',
           desktopMirrored: true,
           warning: null,
         };
@@ -707,7 +752,7 @@ if(fragment.get('e2ee')==='1'&&fragment.get('keyId')&&fragment.get('key')){const
           action: 'reasoning',
           applied: true,
           verified: true,
-          evidence: 'codex',
+          evidence: 'desktop',
           desktopMirrored: true,
           // The active model may not offer the requested level. Saying so keeps
           // the dial honest instead of leaving it on a value Codex never took.
@@ -749,7 +794,7 @@ if(fragment.get('e2ee')==='1'&&fragment.get('keyId')&&fragment.get('key')){const
       const before = await codex.state();
       const sourceThreadId = body.threadId || before.selectedThreadId;
       if (!sourceThreadId) throw actionNotApplied('Select a Codex task first.');
-      const forked = await codex.forkThread(sourceThreadId);
+      const forked = await forkVisibleDesktopThread(sourceThreadId);
       if (
         !forked.selectedThreadId ||
         forked.selectedThreadId === sourceThreadId
@@ -780,7 +825,7 @@ if(fragment.get('e2ee')==='1'&&fragment.get('keyId')&&fragment.get('key')){const
 
     if (request.method === 'POST' && url.pathname === '/api/remote/new') {
       const before = await codex.state();
-      const created = await codex.openNewThread();
+      const created = await openVisibleDesktopThread();
       if (
         !created.selectedThreadId ||
         created.selectedThreadId === before.selectedThreadId

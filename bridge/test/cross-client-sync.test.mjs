@@ -3,11 +3,7 @@ import test from 'node:test';
 
 import { CodexAppServer } from '../lib/codex-app-server.mjs';
 
-function delay(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-test('a Fast Mode change reaches another client attached to the same Codex task', async () => {
+test('a verified Fast Mode change is shared without taking the task writer', async () => {
   const microdex = new CodexAppServer();
   const desktop = new CodexAppServer();
   let threadId;
@@ -24,8 +20,6 @@ test('a Fast Mode change reaches another client attached to the same Codex task'
     const nextFastMode = !initialFastMode;
 
     await microdex.updateSettings({ threadId, fastMode: nextFastMode });
-    await delay(750);
-
     const desktopState = await desktop.state();
     assert.equal(
       desktopState.selected.fastMode,

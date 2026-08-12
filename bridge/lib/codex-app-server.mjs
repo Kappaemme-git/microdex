@@ -437,6 +437,23 @@ export class CodexAppServer {
     return response;
   }
 
+  async #readThread(threadId) {
+    await this.ready();
+    const response = await this.request('thread/read', {
+      threadId,
+      includeTurns: false,
+    });
+    this.#threadSnapshots.set(threadId, response.thread);
+    this.#status.set(threadId, response.thread.status);
+    // thread/read is deliberately non-owning and does not return the model
+    // catalog fields supplied by thread/resume. Keep the supported Microdex
+    // ladder until Codex reports a narrower one through an explicit action.
+    if (!this.#threadReasoningEfforts.has(threadId)) {
+      this.#threadReasoningEfforts.set(threadId, DEFAULT_REASONING_EFFORTS);
+    }
+    return response;
+  }
+
   async #waitForSettingsUpdate(threadId, afterRevision, timeoutMs = 1_500) {
     if ((this.#settingsRevision.get(threadId) ?? 0) > afterRevision) {
       return this.#settings.get(threadId) ?? {};
@@ -460,7 +477,7 @@ export class CodexAppServer {
   }
 
   async selectThread(threadId) {
-    await this.#resume(threadId);
+    await this.#readThread(threadId);
     this.#selectedThreadId = threadId;
     if (process.platform === 'darwin') {
       const opener = spawn('open', [`codex://threads/${encodeURIComponent(threadId)}`], {
@@ -475,8 +492,8 @@ export class CodexAppServer {
   async updateSettings({ threadId, fastMode, reasoningEffort }) {
     const target = threadId || this.#selectedThreadId;
     if (!target) throw new Error('Select a Codex task first.');
-    if (!this.#settings.has(target) || !this.#threadReasoningEfforts.has(target)) {
-      await this.#resume(target);
+    if (!this.#threadReasoningEfforts.has(target)) {
+      await this.#readThread(target);
     }
     if (
       reasoningEffort &&
@@ -488,23 +505,11 @@ export class CodexAppServer {
       error.statusCode = 409;
       throw error;
     }
-    const params = { threadId: target };
-    if (typeof fastMode === 'boolean') {
-      params.serviceTier = serviceTierForFastMode(fastMode);
-    }
-    if (reasoningEffort) params.effort = reasoningEffort;
-    const settingsRevision = this.#settingsRevision.get(target) ?? 0;
-    await this.request('thread/settings/update', params);
-
-    // The update response is intentionally empty. The authoritative value is
-    // delivered by thread/settings/updated, so wait for that notification
-    // instead of inventing the requested state or trusting a stale resume.
-    const confirmedSettings = await this.#waitForSettingsUpdate(
-      target,
-      settingsRevision,
-    );
-
-    for (const client of liveClients) client.receiveSharedSettings(target, confirmedSettings);
+    // The visible Codex desktop applies and verifies this action before this
+    // method is called. Mirroring that observed value locally keeps the phone
+    // in sync without asking Microdex's permanent App Server to become a
+    // second writer for the same task.
+    this.recordSettings({ threadId: target, fastMode, reasoningEffort });
     return this.state();
   }
 
@@ -590,21 +595,12 @@ export class CodexAppServer {
     let selected = threads.find((thread) => thread.id === this.#selectedThreadId) || null;
     if (
       this.#selectedThreadId &&
-      (
-        (!sharedSettings.has(this.#selectedThreadId) &&
-          !this.#settings.has(this.#selectedThreadId)) ||
-        !this.#threadReasoningEfforts.has(this.#selectedThreadId)
-      )
+      !this.#threadReasoningEfforts.has(this.#selectedThreadId)
     ) {
-      try {
-        await this.#resume(this.#selectedThreadId);
-      } catch (error) {
-        // A running Codex turn owns the task writer, so thread/resume can be
-        // rejected even though thread/list already returned a valid live
-        // snapshot. Keep the controller online with that snapshot and retry
-        // hydration on the next state read after the turn finishes.
-        if (!canUseThreadSnapshotAfterResumeError(error)) throw error;
-      }
+      // Reading controller state must never acquire the task writer. A
+      // permanent Microdex bridge that resumes a task prevents the desktop app
+      // from opening it until the bridge process exits.
+      await this.#readThread(this.#selectedThreadId);
     }
     if (this.#selectedThreadId) {
       const snapshot = this.#threadSnapshots.get(this.#selectedThreadId);
