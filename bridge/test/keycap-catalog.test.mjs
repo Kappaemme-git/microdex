@@ -10,7 +10,7 @@ const catalogSource = await readFile(
   'utf8',
 );
 const controllerSource = await readFile(
-  new URL('../../mobile/app/index.tsx', import.meta.url),
+  new URL('../../mobile/features/controller/controller-screen.tsx', import.meta.url),
   'utf8',
 );
 const hardwareKeySource = await readFile(

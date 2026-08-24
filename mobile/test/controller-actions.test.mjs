@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const controllerSource = await readFile(
-  new URL('../app/index.tsx', import.meta.url),
+  new URL('../features/controller/controller-screen.tsx', import.meta.url),
   'utf8',
 );
 const launcherSource = await readFile(
@@ -490,7 +490,7 @@ test('the active chat drives event lighting without leaving completion green for
 test('all six programmable keys target only the active chat', () => {
   const renderedKeys = controllerSource.slice(
     controllerSource.indexOf('const renderProgrammedKey'),
-    controllerSource.indexOf('const copyCommandButton'),
+    controllerSource.indexOf('\n\n  return (', controllerSource.indexOf('const renderProgrammedKey')),
   );
   assert.doesNotMatch(renderedKeys, /remote\?\.threads\[slotIndex\]/);
   assert.doesNotMatch(renderedKeys, /switchRemoteThread/);

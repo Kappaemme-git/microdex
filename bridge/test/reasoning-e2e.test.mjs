@@ -6,7 +6,7 @@ import { CodexAppServer } from '../lib/codex-app-server.mjs';
 import { REASONING_EFFORTS as BRIDGE_EFFORTS } from '../lib/codex-config.mjs';
 
 const mobileSource = await readFile(
-  new URL('../../mobile/app/index.tsx', import.meta.url),
+  new URL('../../mobile/features/controller/controller-screen.tsx', import.meta.url),
   'utf8',
 );
 

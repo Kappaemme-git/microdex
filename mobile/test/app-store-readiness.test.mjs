@@ -2,10 +2,16 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const controllerSource = await readFile(
-  new URL('../app/index.tsx', import.meta.url),
-  'utf8',
-);
+const controllerSource = [
+  await readFile(
+    new URL('../features/controller/controller-screen.tsx', import.meta.url),
+    'utf8',
+  ),
+  await readFile(
+    new URL('../features/controller/connection-gate.tsx', import.meta.url),
+    'utf8',
+  ),
+].join('\n');
 const demoSource = await readFile(
   new URL('../lib/demo.ts', import.meta.url),
   'utf8',

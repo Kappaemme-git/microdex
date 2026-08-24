@@ -13,8 +13,22 @@ import {
   cameraPermissionStep,
 } from '../lib/pairing-scanner.ts';
 
-const controllerSource = await readFile(
-  new URL('../app/index.tsx', import.meta.url),
+const controllerSource = [
+  await readFile(
+    new URL('../features/controller/controller-screen.tsx', import.meta.url),
+    'utf8',
+  ),
+  await readFile(
+    new URL('../features/controller/connection-gate.tsx', import.meta.url),
+    'utf8',
+  ),
+].join('\n');
+const controllerStylesSource = await readFile(
+  new URL('../features/controller/styles.ts', import.meta.url),
+  'utf8',
+);
+const scannerModalSource = await readFile(
+  new URL('../features/controller/pairing-scanner-modal.tsx', import.meta.url),
   'utf8',
 );
 const bridgeSource = await readFile(
@@ -134,7 +148,8 @@ test('foreign and incomplete QR codes are rejected', () => {
 });
 
 test('the phone supports QR pairing and automatic network reconnection', () => {
-  assert.match(controllerSource, /CameraView/);
+  assert.match(scannerModalSource, /CameraView/);
+  assert.match(controllerSource, /PairingScannerModal/);
   assert.match(controllerSource, /parsePairingUrl/);
   assert.match(controllerSource, /claimPairingPayload/);
   assert.match(controllerSource, /usePairingScanner/);
@@ -168,7 +183,7 @@ test('the controller is gated until a Mac is paired and online', () => {
   assert.match(controllerSource, /from your phone/);
   assert.match(controllerSource, /Control Codex/);
   assert.match(controllerSource, /gateCommandRow/);
-  assert.match(controllerSource, /Fonts\.monoMedium/);
+  assert.match(controllerStylesSource, /Fonts\.monoMedium/);
   assert.match(layoutSource, /useFonts\(fontAssets\)/);
   assert.match(fontsSource, /IBMPlexMono_500Medium/);
   assert.match(controllerSource, /Mac unavailable/);

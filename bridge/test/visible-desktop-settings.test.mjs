@@ -12,10 +12,16 @@ const swiftSource = await readFile(
   new URL('../native/MicrodexDesktop.swift', import.meta.url),
   'utf8',
 );
-const controllerSource = await readFile(
-  new URL('../../mobile/app/index.tsx', import.meta.url),
-  'utf8',
-);
+const controllerSource = [
+  await readFile(
+    new URL('../../mobile/features/controller/controller-screen.tsx', import.meta.url),
+    'utf8',
+  ),
+  await readFile(
+    new URL('../../mobile/features/controller/styles.ts', import.meta.url),
+    'utf8',
+  ),
+].join('\n');
 const modelPickerSource = swiftSource.slice(
   swiftSource.indexOf('func findModelPicker()'),
   swiftSource.indexOf('func clickElement(', swiftSource.indexOf('func findModelPicker()')),

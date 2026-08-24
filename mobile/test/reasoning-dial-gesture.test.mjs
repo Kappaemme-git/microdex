@@ -7,7 +7,7 @@ const dialSource = await readFile(
   'utf8',
 );
 const controllerSource = await readFile(
-  new URL('../app/index.tsx', import.meta.url),
+  new URL('../features/controller/controller-screen.tsx', import.meta.url),
   'utf8',
 );
 
