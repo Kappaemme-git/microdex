@@ -54,6 +54,27 @@ const microActionsSource = await readFile(
   new URL('../lib/micro-actions.ts', import.meta.url),
   'utf8',
 );
+const voiceModeSource = await readFile(
+  new URL('../lib/voice-mode.ts', import.meta.url),
+  'utf8',
+);
+const voiceHookSource = await readFile(
+  new URL('../hooks/use-voice-mode.ts', import.meta.url),
+  'utf8',
+);
+const voiceKeySource = await readFile(
+  new URL('../components/voice-key.tsx', import.meta.url),
+  'utf8',
+);
+
+function assertSourceOrder(source, fragments) {
+  let previous = -1;
+  for (const fragment of fragments) {
+    const current = source.indexOf(fragment, previous + 1);
+    assert.ok(current > previous, `Expected source fragment in order: ${fragment}`);
+    previous = current;
+  }
+}
 
 test('the mobile controller never delegates keys to desktop keyboard shortcuts', () => {
   assert.doesNotMatch(controllerSource, /\/api\/actions\/shortcut/);
@@ -214,22 +235,70 @@ test('reasoning is authoritative and microphone actions have explicit start and 
 });
 
 test('native Voice Chat state is returned by the bridge', () => {
-  assert.match(controllerSource, /remote\?\.voice\?\.state/);
-  assert.match(controllerSource, /next\.voice\?\.state === 'setup'/);
-  assert.match(controllerSource, /Choose a voice on your Mac/);
+  assert.match(controllerSource, /voice: remote\?\.voice/);
+  assert.match(voiceModeSource, /nextVoice\?\.state === 'setup'/);
+  assert.match(voiceModeSource, /Choose a voice on your Mac/);
 });
 
 test('the Voice key is a predictable start and stop toggle', () => {
-  const voiceHandler = controllerSource.slice(
-    controllerSource.indexOf('const handleVoicePress'),
-    controllerSource.indexOf('useEffect(() => () => {', controllerSource.indexOf('const handleVoicePress')),
-  );
-  assert.match(voiceHandler, /voiceActive \? 'voice-end' : 'voice-start'/);
-  const voiceKey = controllerSource.slice(
-    controllerSource.indexOf("accessibilityLabel={\n                      voiceActive"),
-    controllerSource.indexOf('/>', controllerSource.indexOf("accessibilityLabel={\n                      voiceActive")),
-  );
-  assert.doesNotMatch(voiceKey, /onLongPress/);
+  assert.match(voiceModeSource, /voice\?\.state === 'active' \? 'voice-end' : 'voice-start'/);
+  assert.match(controllerSource, /<VoiceKey/);
+  assert.match(controllerSource, /presentation=\{voicePresentation\}/);
+  assert.match(controllerSource, /iconColor=\{skeuo\.icon\}/);
+  assert.match(controllerSource, /disabled=\{loadingAction === VOICE_LOADING_ACTION\}/);
+  assert.match(controllerSource, /onPress=\{handleVoicePress\}/);
+  assert.match(voiceKeySource, /accessibilityLabel=\{presentation\.accessibilityLabel\}/);
+  assert.match(voiceKeySource, /<MicrodexVoiceGlyph color=\{iconColor\}/);
+  assert.match(voiceKeySource, /active=\{presentation\.engaged\}/);
+  assert.match(voiceKeySource, /glowColor=\{presentation\.engaged \? VOICE_GLOW_COLOR : undefined\}/);
+  assert.match(voiceKeySource, /disabled=\{disabled\}/);
+  assert.match(voiceKeySource, /onPress=\{\(\) => void onPress\(\)\}/);
+  assert.doesNotMatch(voiceKeySource, /onLongPress/);
+});
+
+test('Voice orchestration preserves guards, verification, feedback, and response order', () => {
+  assertSourceOrder(voiceModeSource, [
+    'if (!requireBridge() || !requireVerifiedSettings())',
+    'flashError()',
+    'const action = getVoiceAction(voice)',
+    'setLoadingAction(VOICE_LOADING_ACTION)',
+    'announce(getVoiceIntentMessage(voice))',
+    'void impact()',
+    'const next = await requestVoiceAction(action)',
+    'verifyCommand(next)',
+    'setRemote(next)',
+    'announce(getVoiceResultMessage(next.voice, wasActive))',
+    'flashComplete()',
+    'await notifySuccess()',
+    '} catch (error) {',
+    'handleActionError(error)',
+    'flashError()',
+    'await notifyError()',
+    '} finally {',
+    'setLoadingAction(null)',
+  ]);
+
+  for (const message of [
+    'Voice setup is open. Choose a voice on your Mac, then press VOICE again.',
+    'Voice Chat opened on your Mac. Complete anything shown there, then press VOICE again.',
+    'Voice Chat microphone muted.',
+    'Voice Chat is live on your Mac.',
+    'Voice Chat ended on your Mac.',
+    'Voice Chat command sent to your Mac.',
+  ]) {
+    assert.ok(voiceModeSource.includes(message), `Missing Voice announcement: ${message}`);
+  }
+
+  assert.match(controllerSource, /const requestVoiceAction = useCallback/);
+  assert.match(controllerSource, /'\/api\/desktop\/action'/);
+  assert.match(controllerSource, /\{ method: 'POST', body: \{ action \} \}/);
+  assert.match(voiceHookSource, /executeVoiceModePress/);
+  assert.match(voiceHookSource, /flashComplete: \(\) => flashHardwareFeedback\(LED\.complete\)/);
+  assert.match(voiceHookSource, /flashError: \(\) => flashHardwareFeedback\(LED\.error\)/);
+  assert.match(voiceHookSource, /Haptics\.ImpactFeedbackStyle\.Light/);
+  assert.match(voiceHookSource, /Haptics\.NotificationFeedbackType\.Success/);
+  assert.match(voiceHookSource, /Haptics\.NotificationFeedbackType\.Error/);
+  assert.doesNotMatch(voiceHookSource, /realBridgeRequest/);
 });
 
 test('the Expo preview and bridge receive the same access token', () => {

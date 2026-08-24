@@ -38,7 +38,6 @@ import { MicrodexIcon, type MicrodexIconName } from '@/components/microdex-icon'
 import {
   MicrodexActionGlyph,
   MicrodexKeycapGlyph,
-  MicrodexVoiceGlyph,
 } from '@/components/microdex-keycap-glyph';
 import { DeckLighting, type MicLight } from '@/components/deck-lighting';
 import { HardwareKey } from '@/components/hardware-key';
@@ -46,6 +45,8 @@ import { Joystick } from '@/components/joystick';
 import { ReasoningDial } from '@/components/reasoning-dial';
 import { DismissibleSheet, SheetHandlePill } from '@/components/sheet-dismiss-handle';
 import { RaisedShell, Screw, ShellPool, getSkeuo, useSkeuo } from '@/components/skeuo';
+import { VoiceKey } from '@/components/voice-key';
+import { useVoiceMode } from '@/hooks/use-voice-mode';
 import {
   BridgeStatus,
   QueuedMessage,
@@ -95,6 +96,7 @@ import type {
 import { claimPairingPayload, parsePairingUrl } from '@/lib/pairing';
 import type { AgentStatusKey } from '@/lib/theme';
 import { LED, LED_RECORDING, statusTone, ThemePalette, useTheme } from '@/lib/theme';
+import { VOICE_LOADING_ACTION, type VoiceAction } from '@/lib/voice-mode';
 
 const STATUS_ICON: Partial<Record<AgentStatusKey, MicrodexIconName>> = {
   complete: 'successCircle',
@@ -135,7 +137,6 @@ const EXPO_BRIDGE_TOKEN = __DEV__
 const FALLBACK_EFFORTS: ReasoningEffort[] = ['low', 'medium', 'high', 'xhigh'];
 const COMPLETE_LIGHT_MS = 1_200;
 const KEY_RESULT_LIGHT_MS = 900;
-const LED_VOICE = '#8EA8FF';
 const ACTION_PROGRESS: Record<string, string> = {
   fast: 'Updating Fast Mode',
   reasoning: 'Updating reasoning',
@@ -394,8 +395,6 @@ export default function ControllerScreen() {
   const activeThreadIndex = remote?.threads.findIndex(
     (thread) => thread.id === activeThread?.id,
   ) ?? -1;
-  const voiceState = remote?.voice?.state ?? 'inactive';
-  const voiceActive = voiceState === 'active';
   const supportedReasoningEfforts = activeThread?.supportedReasoningEfforts?.length
     ? activeThread.supportedReasoningEfforts
     : FALLBACK_EFFORTS;
@@ -1602,55 +1601,30 @@ export default function ControllerScreen() {
     announce('Listening hands-free. Press Talk once to stop.');
   }, [announce, queueDictation]);
 
-  const handleVoicePress = useCallback(async () => {
-    if (!requireBridge() || !requireVerifiedSettings()) {
-      flashHardwareFeedback(LED.error);
-      return;
-    }
-    const action = voiceActive ? 'voice-end' : 'voice-start';
-    setLoadingAction('voice');
-    announce(voiceActive ? 'Ending Voice Chat…' : 'Opening Voice Chat on your Mac…');
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      const next = await bridgeRequest<RemoteState>(
-        bridgeUrl,
-        token,
-        '/api/desktop/action',
-        { method: 'POST', body: { action } },
-      );
-      requireVerifiedCommand(next);
-      setRemote(next);
-      if (next.voice?.state === 'setup') {
-        announce('Voice setup is open. Choose a voice on your Mac, then press VOICE again.');
-      } else if (next.voice?.state === 'launching') {
-        announce('Voice Chat opened on your Mac. Complete anything shown there, then press VOICE again.');
-      } else if (next.voice?.state === 'active') {
-        announce(next.voice.muted ? 'Voice Chat microphone muted.' : 'Voice Chat is live on your Mac.');
-      } else if (voiceActive && next.voice?.state === 'inactive') {
-        announce('Voice Chat ended on your Mac.');
-      } else {
-        announce('Voice Chat command sent to your Mac.');
-      }
-      flashHardwareFeedback(LED.complete);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (error) {
-      handleActionError(error);
-      flashHardwareFeedback(LED.error);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    } finally {
-      setLoadingAction(null);
-    }
-  }, [
-    announce,
-    bridgeRequest,
-    bridgeUrl,
-    flashHardwareFeedback,
-    handleActionError,
+  const requestVoiceAction = useCallback(
+    (action: VoiceAction) => bridgeRequest<RemoteState>(
+      bridgeUrl,
+      token,
+      '/api/desktop/action',
+      { method: 'POST', body: { action } },
+    ),
+    [bridgeRequest, bridgeUrl, token],
+  );
+  const {
+    presentation: voicePresentation,
+    handleVoicePress,
+  } = useVoiceMode({
+    voice: remote?.voice,
     requireBridge,
     requireVerifiedSettings,
-    token,
-    voiceActive,
-  ]);
+    requestVoiceAction,
+    verifyCommand: requireVerifiedCommand,
+    setRemote,
+    setLoadingAction,
+    announce,
+    flashHardwareFeedback,
+    handleActionError,
+  });
 
   useEffect(() => () => {
     if (dictationReleaseTimer.current) {
@@ -2667,21 +2641,11 @@ export default function ControllerScreen() {
                   />
                 </View>
                 <View style={styles.squareSlot}>
-                  <HardwareKey
-                    accessibilityLabel={
-                      voiceActive
-                        ? 'End Voice Chat on the Mac'
-                        : 'Start Voice Chat on the Mac'
-                    }
-                    symbol={<MicrodexVoiceGlyph color={skeuo.icon} />}
-                    active={voiceActive || voiceState === 'setup' || voiceState === 'launching'}
-                    glowColor={
-                      voiceActive || voiceState === 'setup' || voiceState === 'launching'
-                        ? LED_VOICE
-                        : undefined
-                    }
-                    disabled={loadingAction === 'voice'}
-                    onPress={() => void handleVoicePress()}
+                  <VoiceKey
+                    presentation={voicePresentation}
+                    iconColor={skeuo.icon}
+                    disabled={loadingAction === VOICE_LOADING_ACTION}
+                    onPress={handleVoicePress}
                   />
                 </View>
                 <View style={styles.squareSlot}>

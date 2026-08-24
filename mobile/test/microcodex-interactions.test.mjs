@@ -22,6 +22,14 @@ const actionCatalogSource = await readFile(
   new URL('../lib/micro-actions.ts', import.meta.url),
   'utf8',
 );
+const voiceModeSource = await readFile(
+  new URL('../lib/voice-mode.ts', import.meta.url),
+  'utf8',
+);
+const voiceKeySource = await readFile(
+  new URL('../components/voice-key.tsx', import.meta.url),
+  'utf8',
+);
 
 function componentBlock(source, marker, closingTag) {
   const start = source.indexOf(marker);
@@ -48,12 +56,13 @@ test('the Mic key implements Microdex push-to-talk semantics', () => {
 });
 
 test('Voice is a separate native Codex control with a predictable start-stop toggle', () => {
-  assert.match(controllerSource, /'voice-start'/);
-  assert.match(controllerSource, /'voice-end'/);
-  assert.match(controllerSource, /voiceActive \? 'voice-end' : 'voice-start'/);
-  assert.match(controllerSource, /<MicrodexVoiceGlyph/);
-  assert.match(controllerSource, /onPress=\{\(\) => void handleVoicePress\(\)\}/);
-  assert.doesNotMatch(controllerSource, /handleVoiceLongPress/);
+  assert.match(voiceModeSource, /'voice-start'/);
+  assert.match(voiceModeSource, /'voice-end'/);
+  assert.match(voiceModeSource, /voice\?\.state === 'active' \? 'voice-end' : 'voice-start'/);
+  assert.match(controllerSource, /<VoiceKey/);
+  assert.match(voiceKeySource, /<MicrodexVoiceGlyph/);
+  assert.match(voiceKeySource, /onPress=\{\(\) => void onPress\(\)\}/);
+  assert.doesNotMatch(`${controllerSource}\n${voiceKeySource}`, /handleVoiceLongPress/);
   assert.match(controllerSource, /Audio never passes through the phone/);
 
   // Voice must not replace or reuse the MIC push-to-talk lifecycle.
