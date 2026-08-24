@@ -24,7 +24,7 @@ Run:
 microdex review-pair
 ```
 
-The QR is end-to-end encrypted, single-use, and expires after seven days. A
+The QR is end-to-end encrypted, single-use, and expires after thirty days. A
 bridge restart, a new pairing request, or `microdex revoke-all` invalidates it.
 Generate it as close to submission as practical.
 

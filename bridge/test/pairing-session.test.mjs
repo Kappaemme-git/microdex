@@ -46,7 +46,7 @@ test('invalid and expired pairing codes never reveal the bridge token', () => {
   });
 });
 
-test('an App Review pairing can remain valid for seven days but is still single-use', () => {
+test('an App Review pairing can remain valid for thirty days but is still single-use', () => {
   const session = new PairingSession({
     accessToken: 'review-device-secret',
     code: 'private-review-code',
@@ -54,7 +54,7 @@ test('an App Review pairing can remain valid for seven days but is still single-
     ttlMs: REVIEW_PAIRING_TTL_MS,
   });
 
-  assert.equal(session.expiresAt, 1_000 + (7 * 24 * 60 * 60 * 1_000));
+  assert.equal(session.expiresAt, 1_000 + (30 * 24 * 60 * 60 * 1_000));
   assert.deepEqual(session.claim('private-review-code', session.expiresAt - 1), {
     ok: true,
     token: 'review-device-secret',

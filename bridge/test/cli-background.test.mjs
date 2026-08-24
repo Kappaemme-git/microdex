@@ -76,7 +76,7 @@ test('the CLI exposes lifecycle and emergency revocation commands', () => {
 test('the public CLI contains no native hardware impersonation mode', () => {
   assert.doesNotMatch(cliSource, /case 'native'|microdex native|NODE_OPTIONS: `--require=/);
   assert.doesNotMatch(serverSource, /nativeShim|applyNative/);
-  assert.equal(packageJson.version, '0.1.20');
+  assert.equal(packageJson.version, '0.1.21');
   assert.equal(
     packageJson.files.some((entry) => /native-shim|experiments/.test(entry)),
     false,

@@ -111,7 +111,7 @@ To test the live integration:
 5. Test chat, Fast Mode, reasoning, approvals, and Voice Chat controls.
 
 The dedicated review Mac will remain awake, powered, online, and signed in to a
-review-only Codex account during review. The submitted QR expires after seven
+review-only Codex account during review. The submitted QR expires after thirty
 days, is single-use, and will be revoked after review. Voice Chat and dictation
 execute on the Mac; the iPhone does not request microphone access or capture
 phone audio.

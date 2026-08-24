@@ -56,7 +56,7 @@ function printHelp() {
   ${ui.bold('Usage')}
     microdex setup      Install the background bridge and pair
     microdex pair       Show a fresh pairing QR
-    microdex review-pair Show a single-use App Review QR (7 days)
+    microdex review-pair Show a single-use App Review QR (30 days)
     microdex status     Check the background bridge
     microdex restart    Restart the background bridge
     microdex revoke-all Revoke every paired phone and rotate the access key

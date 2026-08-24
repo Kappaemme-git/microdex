@@ -110,7 +110,7 @@ Mac-to-phone path, prepare a dedicated clean review Mac and run:
 microdex review-pair
 ```
 
-This creates a private, single-use encrypted pairing QR that expires after seven
+This creates a private, single-use encrypted pairing QR that expires after thirty
 days. Attach it only in App Store Connect review notes, keep that Mac awake and
 online during review, and run `microdex revoke-all` when review finishes. See
 [docs/APP_REVIEW_RUNBOOK.md](docs/APP_REVIEW_RUNBOOK.md) for the complete flow.
@@ -156,7 +156,7 @@ node bridge/scripts/set-fast.mjs on --config /tmp/microdex-test-config.toml
 
 - Every bridge action requires an authenticated credential stored with mode `0600` in `~/.microdex/access-token`.
 - The QR contains a separate one-time pairing code, expires after 10 minutes, and cannot be reused after a successful claim.
-- `microdex review-pair` is an explicit App Review exception: its QR expires after seven days but remains single-use and is invalidated by a bridge restart or `revoke-all`.
+- `microdex review-pair` is an explicit App Review exception: its QR expires after thirty days but remains single-use and is invalidated by a bridge restart or `revoke-all`.
 - Every new pairing creates a separate 256-bit end-to-end encryption key. The key is carried in the QR URL fragment, which is not sent to the relay.
 - Commands, messages, task state, the persistent bridge credential, and live events are encrypted between the phone and Mac with authenticated XChaCha20-Poly1305. Cloudflare relays ciphertext and cannot decrypt their contents.
 - The persistent bridge credential and encryption key are returned only inside the encrypted pairing exchange and are stored in the iOS Keychain by the app.
