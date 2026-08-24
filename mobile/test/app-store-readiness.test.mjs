@@ -113,8 +113,8 @@ test('source-controlled App Store metadata is English-only and manually released
   assert.equal(storeConfig.apple.release.automaticRelease, false);
   assert.equal(storeConfig.apple.copyright, '2026 Francesco Mistero');
   assert.equal(Object.keys(storeConfig.apple.info).length, 1);
-  assert.match(thirdPartyNotices, /Tabler Icons/);
-  assert.match(thirdPartyNotices, /Paweł Kuna/);
+  assert.match(thirdPartyNotices, /Custom interface icon assets/);
+  assert.match(thirdPartyNotices, /custom icons used with\s+permission from their creator/);
 });
 
 test('the English App Store set contains five real iPhone 17 Pro Max captures', async () => {
@@ -141,5 +141,5 @@ test('the reviewer runbook requires live access, fictional data, and revocation'
   assert.match(reviewRunbook, /fictional tasks/i);
   assert.match(reviewRunbook, /single-use/i);
   assert.match(reviewRunbook, /microdex revoke-all/);
-  assert.match(reviewRunbook, /Tabler Icons/i);
+  assert.match(reviewRunbook, /custom SVG collection/i);
 });

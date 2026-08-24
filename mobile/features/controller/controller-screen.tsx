@@ -2934,7 +2934,7 @@ export default function ControllerScreen() {
                 theme={theme}
                 icon="label-outline"
                 title="Microdex key icons"
-                body="Every icon uses the open-source Tabler family or original Microdex typography. GIT commits, PR opens a pull request, YOLO inserts :yolo:, and every slot can be reassigned."
+                body="Every icon uses the custom Microdex SVG family or original Microdex typography. GIT commits, PR opens a pull request, YOLO inserts :yolo:, and every slot can be reassigned."
               />
 
               <View style={styles.guideSectionIntro}>
@@ -3439,7 +3439,7 @@ export default function ControllerScreen() {
                   <>
                     <Text style={styles.infoLead}>Open source, with attribution.</Text>
                     <Text style={styles.infoParagraph}>
-                      Microdex is distributed under the MIT License. Interface icons come from Tabler Icons under the MIT License; a few product-specific marks and text glyphs are original Microdex artwork.
+                      Microdex is distributed under the MIT License. Interface icons come from a custom SVG collection used with permission and are not official OpenAI or Codex assets; product-specific marks and text glyphs are original Microdex artwork. Icon assets are not covered by the Microdex MIT License unless separately stated.
                     </Text>
                     <Pressable
                       accessibilityRole="link"

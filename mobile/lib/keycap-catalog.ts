@@ -7,7 +7,7 @@ export type KeycapDescriptor = {
   id: MicroKeycapId;
   /** Human-readable name of the printed symbol, used by screen readers. */
   name: string;
-  /** Microdex-owned semantic icon alias rendered through Tabler. */
+  /** Stable semantic alias rendered through the custom SVG catalog. */
   icon: KeycapIcon;
   /**
    * Commands historically associated with this identifier. Choosing one in the

@@ -26,8 +26,8 @@ type VoiceGlyphProps = {
 
 /**
  * Renders legacy keycap identifiers with the Microdex icon system. The IDs are
- * retained only for layout compatibility; the artwork is Tabler or original
- * Microdex typography and is not copied from a physical product.
+ * retained only for layout compatibility; the artwork comes from the custom
+ * SVG catalog or original Microdex typography.
  */
 export function MicrodexKeycapGlyph({
   keycapId,

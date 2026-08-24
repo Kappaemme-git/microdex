@@ -25,6 +25,10 @@ const iconSource = await readFile(
   new URL('../../mobile/components/microdex-icon.tsx', import.meta.url),
   'utf8',
 );
+const centralIconSource = await readFile(
+  new URL('../../mobile/components/central-icon-data.ts', import.meta.url),
+  'utf8',
+);
 
 /** Entries in catalog order, which is also the order shown in the grid. */
 function catalogEntries() {
@@ -78,7 +82,7 @@ test('every keycap has a readable name and an icon', () => {
   }
 });
 
-test('every key identifier resolves through the MIT-licensed Microdex icon system', () => {
+test('every key identifier resolves through the custom SVG icon system', () => {
   for (const entry of catalogEntries()) {
     const quoted = `  '${entry.icon}':`;
     const identifier = `  ${entry.icon}:`;
@@ -89,6 +93,8 @@ test('every key identifier resolves through the MIT-licensed Microdex icon syste
   }
   assert.match(glyphSource, /keycapDescriptor\(keycapId\)/);
   assert.match(glyphSource, /<MicrodexIcon name=\{descriptor\.icon\}/);
+  assert.match(iconSource, /CENTRAL_ICON_XML\[source\]/);
+  assert.match(centralIconSource, /Generated from the central-icons-reversed/);
   assert.doesNotMatch(glyphSource, /OFFICIAL_CODEX|official-codex/i);
 });
 
