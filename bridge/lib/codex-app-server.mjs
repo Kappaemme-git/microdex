@@ -5,6 +5,9 @@ import path from 'node:path';
 
 const DEFAULT_CODEX_BIN = '/Applications/ChatGPT.app/Contents/Resources/codex';
 const REQUEST_TIMEOUT_MS = 15_000;
+const APP_SERVER_STARTUP_TIMEOUT_MS = 15_000;
+const APP_SERVER_CONNECT_TIMEOUT_MS = 500;
+const APP_SERVER_RETRY_DELAY_MS = 100;
 const STATE_CHANGE_METHODS = new Set([
   'thread/status/changed',
   'thread/settings/updated',
@@ -59,24 +62,138 @@ function reserveLoopbackPort() {
   });
 }
 
-function openWebSocket(url, attempts = 50) {
+function appServerExitError(server, code, signal) {
+  const exitReason = signal
+    ? `signal ${signal}`
+    : Number.isInteger(code)
+      ? `code ${code}`
+      : 'an unknown reason';
+  const stderr = server.stderr.trim().split(/\r?\n/).filter(Boolean).at(-1);
+  return new Error(
+    `Codex App Server exited before becoming ready (${exitReason}).${stderr ? ` ${stderr}` : ''}`,
+  );
+}
+
+function openWebSocket(server, timeoutMs = APP_SERVER_STARTUP_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
-    let attempt = 0;
-    const connect = () => {
-      const socket = new WebSocket(url);
-      const timeout = setTimeout(() => socket.close(), 300);
-      socket.addEventListener('open', () => {
-        clearTimeout(timeout);
-        resolve(socket);
-      }, { once: true });
-      socket.addEventListener('error', () => {
-        clearTimeout(timeout);
-        socket.close();
-        attempt += 1;
-        if (attempt >= attempts) reject(new Error('Codex shared App Server did not start.'));
-        else setTimeout(connect, 60);
-      }, { once: true });
+    const { child, url } = server;
+    const deadline = Date.now() + timeoutMs;
+    let settled = false;
+    let retryTimer;
+    let cancelAttempt;
+    let lastError;
+
+    const removeChildListeners = () => {
+      child.removeListener('error', onChildError);
+      child.removeListener('exit', onChildExit);
     };
+
+    const rejectOnce = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(retryTimer);
+      cancelAttempt?.();
+      removeChildListeners();
+      reject(error);
+    };
+
+    const resolveOnce = (socket) => {
+      if (settled) {
+        socket.close();
+        return;
+      }
+      settled = true;
+      clearTimeout(retryTimer);
+      cancelAttempt = undefined;
+      removeChildListeners();
+      resolve(socket);
+    };
+
+    function onChildError(error) {
+      rejectOnce(new Error(`Codex App Server could not start: ${error.message}`));
+    }
+
+    function onChildExit(code, signal) {
+      rejectOnce(appServerExitError(server, code, signal));
+    }
+
+    const scheduleRetry = () => {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        const error = new Error(
+          `Codex App Server did not become ready within ${timeoutMs / 1_000} seconds.`,
+        );
+        if (lastError) error.cause = lastError;
+        rejectOnce(error);
+        return;
+      }
+      retryTimer = setTimeout(connect, Math.min(APP_SERVER_RETRY_DELAY_MS, remaining));
+    };
+
+    const connect = () => {
+      if (settled) return;
+      if (child.exitCode !== null || child.signalCode !== null) {
+        onChildExit(child.exitCode, child.signalCode);
+        return;
+      }
+
+      const socket = new WebSocket(url);
+      let attemptFinished = false;
+      let attemptTimer;
+
+      const cleanupAttempt = (closeSocket = false) => {
+        clearTimeout(attemptTimer);
+        socket.removeEventListener('open', onOpen);
+        socket.removeEventListener('error', onError);
+        socket.removeEventListener('close', onClose);
+        if (
+          closeSocket &&
+          (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)
+        ) {
+          socket.close();
+        }
+      };
+
+      const failAttempt = (error) => {
+        if (attemptFinished || settled) return;
+        attemptFinished = true;
+        lastError = error;
+        cleanupAttempt(true);
+        cancelAttempt = undefined;
+        scheduleRetry();
+      };
+
+      const onOpen = () => {
+        if (attemptFinished || settled) return;
+        attemptFinished = true;
+        cleanupAttempt(false);
+        cancelAttempt = undefined;
+        resolveOnce(socket);
+      };
+      const onError = (event) => {
+        failAttempt(event?.error || new Error('Codex App Server connection failed.'));
+      };
+      const onClose = () => {
+        failAttempt(new Error('Codex App Server connection closed during startup.'));
+      };
+
+      cancelAttempt = () => {
+        if (attemptFinished) return;
+        attemptFinished = true;
+        cleanupAttempt(true);
+      };
+
+      socket.addEventListener('open', onOpen, { once: true });
+      socket.addEventListener('error', onError, { once: true });
+      socket.addEventListener('close', onClose, { once: true });
+      attemptTimer = setTimeout(
+        () => failAttempt(new Error('Codex App Server connection attempt timed out.')),
+        Math.min(APP_SERVER_CONNECT_TIMEOUT_MS, Math.max(1, deadline - Date.now())),
+      );
+    };
+
+    child.once('error', onChildError);
+    child.once('exit', onChildExit);
     connect();
   });
 }
@@ -91,8 +208,10 @@ async function acquireSharedServer(codexBin) {
         env: process.env,
         windowsHide: true,
       });
+      const server = { child, url, clients: 0, stderr: '' };
       child.stderr.setEncoding('utf8');
       child.stderr.on('data', (chunk) => {
+        server.stderr = `${server.stderr}${chunk}`.slice(-4_000);
         if (process.env.MICRODEX_DEBUG !== '1') return;
         const message = chunk.trim();
         if (message) console.error(`[codex app-server] ${message}`);
@@ -103,7 +222,7 @@ async function acquireSharedServer(codexBin) {
           sharedServerPromise = undefined;
         }
       });
-      sharedServer = { child, url, clients: 0 };
+      sharedServer = server;
       return sharedServer;
     })().catch((error) => {
       sharedServer = undefined;
@@ -194,7 +313,7 @@ export class CodexAppServer {
 
   constructor() {
     liveClients.add(this);
-    this.#readyPromise = this.#start();
+    void this.ready().catch(() => {});
   }
 
   receiveSharedSettings(threadId, settings) {
@@ -237,26 +356,58 @@ export class CodexAppServer {
 
   async #start() {
     const codexBin = await resolveCodexBinary();
-    this.#sharedServer = await acquireSharedServer(codexBin);
-    this.#socket = await openWebSocket(this.#sharedServer.url);
-    this.#socket.addEventListener('message', (event) => {
+    const server = await acquireSharedServer(codexBin);
+    this.#sharedServer = server;
+    let socket;
+    try {
+      socket = await openWebSocket(server);
+      if (this.#closed) {
+        socket.close();
+        throw new Error('Codex App Server client is closed.');
+      }
+      this.#socket = socket;
+    } catch (error) {
+      if (this.#sharedServer === server) {
+        this.#sharedServer = undefined;
+        releaseSharedServer(server);
+      }
+      throw error;
+    }
+
+    socket.addEventListener('message', (event) => {
       const chunk = typeof event.data === 'string'
         ? event.data
         : Buffer.from(event.data).toString('utf8');
       this.#consume(`${chunk}\n`);
     });
-    this.#socket.addEventListener('close', () => {
-      this.#closed = true;
+    socket.addEventListener('close', () => {
+      if (this.#socket !== socket) return;
+      this.#socket = undefined;
       const error = new Error('Codex App Server connection closed.');
       for (const entry of this.#pending.values()) entry.reject(error);
       this.#pending.clear();
+      if (this.#sharedServer === server) {
+        this.#sharedServer = undefined;
+        releaseSharedServer(server);
+      }
+      if (!this.#closed) this.#readyPromise = undefined;
     });
 
-    await this.request('initialize', {
-      clientInfo: { name: 'microdex', title: 'Microdex', version: '0.2.0' },
-      capabilities: { experimentalApi: true },
-    });
-    this.notify('initialized', {});
+    try {
+      await this.request('initialize', {
+        clientInfo: { name: 'microdex', title: 'Microdex', version: '0.2.0' },
+        capabilities: { experimentalApi: true },
+      });
+      this.notify('initialized', {});
+    } catch (error) {
+      if (this.#socket === socket) this.#socket = undefined;
+      socket.close();
+      if (this.#sharedServer === server) {
+        this.#sharedServer = undefined;
+        releaseSharedServer(server);
+      }
+      throw error;
+    }
   }
 
   #consume(chunk) {
@@ -371,6 +522,14 @@ export class CodexAppServer {
   }
 
   async ready() {
+    if (this.#closed) throw new Error('Codex App Server client is closed.');
+    if (!this.#readyPromise) {
+      const startup = this.#start();
+      this.#readyPromise = startup;
+      void startup.catch(() => {
+        if (this.#readyPromise === startup) this.#readyPromise = undefined;
+      });
+    }
     await this.#readyPromise;
   }
 
@@ -633,10 +792,18 @@ export class CodexAppServer {
   }
 
   close() {
+    if (this.#closed) return;
+    this.#closed = true;
     this.#changeListeners.clear();
     liveClients.delete(this);
-    if (!this.#closed) this.#socket?.close();
-    releaseSharedServer(this.#sharedServer);
+    const socket = this.#socket;
+    this.#socket = undefined;
+    socket?.close();
+    const error = new Error('Codex App Server client is closed.');
+    for (const entry of this.#pending.values()) entry.reject(error);
+    this.#pending.clear();
+    if (this.#sharedServer) releaseSharedServer(this.#sharedServer);
     this.#sharedServer = undefined;
+    this.#readyPromise = undefined;
   }
 }
