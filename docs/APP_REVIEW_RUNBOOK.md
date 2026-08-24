@@ -42,6 +42,16 @@ Suggested review instructions:
 4. Voice Chat and dictation execute on the review Mac; the iPhone does not
    capture or relay microphone audio.
 
+For the resubmission after the August 24, 2026 review:
+
+- confirm **China mainland is deselected** in Availability;
+- explain that the subtitle and promotional text no longer use third-party
+  product names;
+- state that the scanner now displays progress on every tap, waits for modal
+  dismissal on iOS/iPadOS compatibility mode, and presents a visible recovery
+  dialog with an Open Settings action when camera access is unavailable;
+- test the clean-install scanner flow on both iPhone and iPad compatibility mode.
+
 ## Revoke after review
 
 Run:

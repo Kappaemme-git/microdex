@@ -99,8 +99,10 @@ test('source-controlled App Store metadata is English-only and manually released
   assert.equal(storeConfig.apple.info['en-US'].title, 'Microdex Remote');
   assert.equal(
     storeConfig.apple.info['en-US'].subtitle,
-    'Control Codex from your phone',
+    'Your Mac control surface',
   );
+  assert.doesNotMatch(storeConfig.apple.info['en-US'].subtitle, /Codex|OpenAI|ChatGPT/i);
+  assert.doesNotMatch(storeConfig.apple.info['en-US'].promoText, /Codex|OpenAI|ChatGPT/i);
   assert.deepEqual(storeConfig.apple.categories, ['DEVELOPER_TOOLS', 'PRODUCTIVITY']);
   assert.equal(storeConfig.apple.release.automaticRelease, false);
   assert.equal(storeConfig.apple.copyright, '2026 Francesco Mistero');

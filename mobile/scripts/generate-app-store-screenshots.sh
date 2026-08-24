@@ -14,6 +14,8 @@ render_screenshot() {
   scene=$1
   output_file=$2
   chrome_profile=$(mktemp -d /tmp/microdex-screenshot-chrome.XXXXXX)
+  output_path="$OUTPUT_DIR/$output_file"
+  rm -f "$output_path"
 
   "$CHROME_BIN" \
     --headless=new \
@@ -24,8 +26,28 @@ render_screenshot() {
     --user-data-dir="$chrome_profile" \
     --force-device-scale-factor=1 \
     --window-size=1320,2868 \
-    --screenshot="$OUTPUT_DIR/$output_file" \
-    "file://$TEMPLATE_FILE?scene=$scene" >/dev/null 2>&1
+    --screenshot="$output_path" \
+    "file://$TEMPLATE_FILE?scene=$scene" >/dev/null 2>&1 &
+  chrome_pid=$!
+
+  attempts=0
+  while [ ! -s "$output_path" ] && [ "$attempts" -lt 100 ]; do
+    sleep 0.1
+    attempts=$((attempts + 1))
+  done
+
+  if [ ! -s "$output_path" ]; then
+    kill "$chrome_pid" 2>/dev/null || true
+    wait "$chrome_pid" 2>/dev/null || true
+    echo "Screenshot rendering timed out: $output_file" >&2
+    exit 1
+  fi
+
+  # Current Chrome can leave its headless parent alive after writing the PNG.
+  # Stop only that isolated temporary-profile process once the complete file exists.
+  kill "$chrome_pid" 2>/dev/null || true
+  wait "$chrome_pid" 2>/dev/null || true
+  rm -rf "$chrome_profile"
 }
 
 render_screenshot controller 01-control-codex.png

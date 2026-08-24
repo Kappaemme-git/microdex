@@ -14,7 +14,7 @@
     "info": {
       "en-US": {
         "title": "Microdex Remote",
-        "subtitle": "Control Codex from your phone",
+        "subtitle": "Your Mac control surface",
         "description": "Microdex turns your iPhone into a focused control surface for a Codex runtime running on your own Mac.\n\nSwitch tasks, send messages, adjust reasoning, use Fast Mode, handle approval requests, control Voice Chat on the Mac, and assign actions to a customizable set of keys. A built-in offline experience lets you explore the complete interface using fictional tasks before pairing a computer.\n\nPairing uses a one-time QR code. Commands, messages, and task state are end-to-end encrypted between the paired iPhone and Mac. The relay carries encrypted data and does not receive the encryption keys. The iPhone does not capture or relay Voice Chat audio.\n\nLive control requires a user-owned Mac with macOS, Node.js 20.19 or newer, and Codex installed and signed in. The phone and Mac do not need to share the same Wi-Fi network. Microdex does not include a Codex or OpenAI account.\n\nMicrodex is free and open source. It is an independent companion and is not affiliated with or endorsed by OpenAI or Work Louder.",
         "keywords": [
           "developer",
@@ -29,7 +29,7 @@
           "companion"
         ],
         "releaseNotes": "Initial release of Microdex for iPhone.",
-        "promoText": "Control your Codex workflow from iPhone with secure pairing, programmable keys, chat, Voice Chat controls, and a complete offline demo.",
+        "promoText": "A focused Mac control surface with secure pairing, programmable keys, messaging, voice controls, and a complete offline demo.",
         "marketingUrl": "https://github.com/Kappaemme-git/microdex",
         "supportUrl": "https://github.com/Kappaemme-git/microdex/blob/main/SUPPORT.md",
         "privacyPolicyUrl": "https://github.com/Kappaemme-git/microdex/blob/main/PRIVACY.md",

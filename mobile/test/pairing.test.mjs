@@ -8,6 +8,10 @@ import {
   normalizeBridgeUrl,
   parsePairingUrl,
 } from '../lib/pairing.ts';
+import {
+  cameraPermissionMessage,
+  cameraPermissionStep,
+} from '../lib/pairing-scanner.ts';
 
 const controllerSource = await readFile(
   new URL('../app/index.tsx', import.meta.url),
@@ -27,6 +31,10 @@ const layoutSource = await readFile(
 );
 const fontsSource = await readFile(
   new URL('../lib/fonts.ts', import.meta.url),
+  'utf8',
+);
+const scannerHookSource = await readFile(
+  new URL('../hooks/use-pairing-scanner.ts', import.meta.url),
   'utf8',
 );
 
@@ -129,10 +137,7 @@ test('the phone supports QR pairing and automatic network reconnection', () => {
   assert.match(controllerSource, /CameraView/);
   assert.match(controllerSource, /parsePairingUrl/);
   assert.match(controllerSource, /claimPairingPayload/);
-  assert.match(
-    controllerSource,
-    /setSettingsVisible\(false\);[\s\S]*setTimeout\(\(\) => setScannerVisible\(true\)/,
-  );
+  assert.match(controllerSource, /usePairingScanner/);
   assert.match(controllerSource, /Network\.useNetworkState\(\)/);
   assert.match(controllerSource, /AppState\.addEventListener/);
   assert.match(controllerSource, /reconnectAttempt/);
@@ -140,6 +145,22 @@ test('the phone supports QR pairing and automatic network reconnection', () => {
   assert.match(bridgeClientSource, /payload\.code === 'MAC_OFFLINE'/);
   assert.match(bridgeClientSource, /type: 'e2ee-auth'/);
   assert.match(controllerSource, /STORAGE_E2EE/);
+});
+
+test('the pairing scanner always responds to camera permission state', () => {
+  assert.equal(cameraPermissionStep(null), 'request');
+  assert.equal(cameraPermissionStep({ granted: false, canAskAgain: true }), 'request');
+  assert.equal(cameraPermissionStep({ granted: false, canAskAgain: false }), 'settings');
+  assert.equal(cameraPermissionStep({ granted: true, canAskAgain: false }), 'open');
+  assert.match(cameraPermissionMessage('settings'), /Enable Camera in Settings/);
+
+  assert.match(scannerHookSource, /scannerOpening/);
+  assert.match(scannerHookSource, /Opening the QR scanner/);
+  assert.match(scannerHookSource, /Alert\.alert/);
+  assert.match(scannerHookSource, /Linking\.openSettings/);
+  assert.match(scannerHookSource, /IOS_MODAL_DISMISS_MS/);
+  assert.match(controllerSource, /Opening camera…/);
+  assert.match(controllerSource, /accessibilityState=\{\{ busy: scannerOpening/);
 });
 
 test('the controller is gated until a Mac is paired and online', () => {
@@ -190,7 +211,7 @@ test('the browser pairing deep link resolves to an existing Expo Router screen',
 
 test('a recognized QR closes the scanner before the network claim can fail', () => {
   const start = controllerSource.indexOf('const claimPairingCode');
-  const end = controllerSource.indexOf('const presentPairingScanner', start);
+  const end = controllerSource.indexOf('const openPairingScanner', start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
   const handler = controllerSource.slice(start, end);

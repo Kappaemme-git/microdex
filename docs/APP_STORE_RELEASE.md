@@ -3,6 +3,13 @@
 This checklist describes the current app and relay. Revisit it whenever an SDK,
 analytics service, permission, or data flow changes.
 
+## China mainland
+
+Microdex depends on functionality and metadata that reference OpenAI services.
+Keep **China mainland deselected** in App Store Connect availability unless the
+required local permits and legal review have been completed. Confirm the
+exclusion immediately before every submission and state it in Review Notes.
+
 ## Export compliance
 
 Microdex implements XChaCha20-Poly1305 through `@noble/ciphers` in addition to

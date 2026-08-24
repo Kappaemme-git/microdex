@@ -12,7 +12,7 @@ Microdex Remote
 
 **Subtitle**
 
-Control Codex from your phone
+Your Mac control surface
 
 **Primary category**
 
@@ -24,9 +24,8 @@ Productivity
 
 **Promotional text**
 
-Control your Codex workflow from your iPhone with secure pairing, programmable
-keys, chat, Voice Chat controls, and an offline experience that works without a
-Mac.
+A focused Mac control surface with secure pairing, programmable keys, messaging,
+voice controls, and a complete offline demo.
 
 **Keywords**
 
@@ -76,8 +75,8 @@ Use fictional task names and content in every image. Capture the production
 build rather than Expo Go. Do not show personal notifications, account names,
 pairing QR codes, bridge URLs, tokens, or real task content.
 
-1. Main controller — `Control Codex from your phone`
-2. Task and chat drawer — `Your Codex workflow, anywhere`
+1. Main controller — `Your Mac control surface`
+2. Task and chat drawer — `Your workflow, anywhere`
 3. Voice Chat control — `Control Voice Chat on your Mac`
 4. Programmable keys — `Build your own control deck`
 5. Secure pairing — `One scan. End-to-end encrypted.`
@@ -123,6 +122,10 @@ use Tabler Icons under the MIT License, with notices included in the app and
 repository. Product-specific marks and text glyphs are original Microdex work.
 The integration uses the Codex App Server supplied with the user's installed
 Codex runtime; Microdex does not impersonate first-party hardware.
+
+China mainland is excluded from availability because this release depends on
+OpenAI-related functionality and metadata. Do not enable that storefront without
+the required permits and a separate legal review.
 
 ## App Privacy working answers
 

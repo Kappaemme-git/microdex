@@ -1,4 +1,4 @@
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView } from 'expo-camera';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
@@ -46,6 +46,7 @@ import { ReasoningDial } from '@/components/reasoning-dial';
 import { DismissibleSheet, SheetHandlePill } from '@/components/sheet-dismiss-handle';
 import { RaisedShell, Screw, ShellPool, getSkeuo, useSkeuo } from '@/components/skeuo';
 import { VoiceKey } from '@/components/voice-key';
+import { usePairingScanner } from '@/hooks/use-pairing-scanner';
 import { useVoiceMode } from '@/hooks/use-voice-mode';
 import {
   BridgeStatus,
@@ -286,7 +287,6 @@ export default function ControllerScreen() {
   const chatDrawerRef = useRef<ChatDrawerHandle>(null);
   const liveStatusPulse = useRef(new Animated.Value(0.62)).current;
   const [settingsVisible, setSettingsVisible] = useState(false);
-  const [scannerVisible, setScannerVisible] = useState(false);
   const [consentVisible, setConsentVisible] = useState(false);
   const [consentContinuation, setConsentContinuation] =
     useState<ConsentContinuation>(null);
@@ -294,7 +294,6 @@ export default function ControllerScreen() {
   const [infoSheet, setInfoSheet] = useState<InfoSheet | null>(null);
   const [commandCopied, setCommandCopied] = useState(false);
   const commandCopiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [credentialsReady, setCredentialsReady] = useState(VISUAL_PREVIEW);
   const [bridgeConnecting, setBridgeConnecting] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
@@ -467,6 +466,19 @@ export default function ControllerScreen() {
     setNotice(message);
     setNoticeError(isError);
   }, []);
+
+  const dismissSettingsForScanner = useCallback(() => {
+    setSettingsVisible(false);
+  }, []);
+  const {
+    scannerVisible,
+    scannerOpening,
+    setScannerVisible,
+    presentPairingScanner,
+  } = usePairingScanner({
+    announce,
+    dismissSettings: dismissSettingsForScanner,
+  });
 
   const bridgeRequest = useCallback(async <T,>(
     candidateUrl: string,
@@ -912,23 +924,6 @@ export default function ControllerScreen() {
       pairingInFlight.current = false;
     }
   }, [announce, connectToBridge]);
-
-  const presentPairingScanner = useCallback(async () => {
-    if (Platform.OS === 'web') {
-      announce('QR pairing is available on iPhone and Android.', true);
-      return;
-    }
-    let permission = cameraPermission;
-    if (!permission?.granted) permission = await requestCameraPermission();
-    if (!permission.granted) {
-      announce('Camera permission is needed to scan the pairing QR.', true);
-      return;
-    }
-    // iOS cannot reliably present the camera modal while the Settings modal
-    // is still being dismissed. Close it first, then present the scanner.
-    setSettingsVisible(false);
-    setTimeout(() => setScannerVisible(true), Platform.OS === 'ios' ? 320 : 0);
-  }, [announce, cameraPermission, requestCameraPermission]);
 
   const openPairingScanner = useCallback(async () => {
     if (!aiConsent) {
@@ -2266,13 +2261,21 @@ export default function ControllerScreen() {
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
+                    accessibilityState={{ busy: scannerOpening, disabled: scannerOpening }}
+                    disabled={scannerOpening}
                     onPress={() => void openPairingScanner()}
                     style={({ pressed }) => [
                       styles.gateSecondaryButton,
                       pressed && styles.gateButtonPressed,
                     ]}>
-                    <MicrodexIcon name="qrCode" size={17} color={theme.text} />
-                    <Text style={styles.gateSecondaryButtonText}>Pair another Mac</Text>
+                    {scannerOpening ? (
+                      <ActivityIndicator size="small" color={theme.text} />
+                    ) : (
+                      <MicrodexIcon name="qrCode" size={17} color={theme.text} />
+                    )}
+                    <Text style={styles.gateSecondaryButtonText}>
+                      {scannerOpening ? 'Opening camera…' : 'Pair another Mac'}
+                    </Text>
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
@@ -2345,13 +2348,21 @@ export default function ControllerScreen() {
 
                   <Pressable
                     accessibilityRole="button"
+                    accessibilityState={{ busy: scannerOpening, disabled: scannerOpening }}
+                    disabled={scannerOpening}
                     onPress={() => void openPairingScanner()}
                     style={({ pressed }) => [
                       styles.gatePrimaryButton,
                       pressed && styles.gateButtonPressed,
                     ]}>
-                    <MicrodexIcon name="qrCode" size={17} color={theme.bg} />
-                    <Text style={styles.gatePrimaryButtonText}>Scan pairing code</Text>
+                    {scannerOpening ? (
+                      <ActivityIndicator size="small" color={theme.bg} />
+                    ) : (
+                      <MicrodexIcon name="qrCode" size={17} color={theme.bg} />
+                    )}
+                    <Text style={styles.gatePrimaryButtonText}>
+                      {scannerOpening ? 'Opening camera…' : 'Scan pairing code'}
+                    </Text>
                   </Pressable>
 
                   <Pressable
@@ -3269,13 +3280,21 @@ export default function ControllerScreen() {
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Scan computer pairing QR"
+                  accessibilityState={{ busy: scannerOpening, disabled: scannerOpening }}
+                  disabled={scannerOpening}
                   onPress={() => void openPairingScanner()}
                   style={({ pressed }) => [
                     styles.settingsPrimaryButton,
                     pressed && styles.gateButtonPressed,
                   ]}>
-                  <MicrodexIcon name="qrCode" size={16} color={theme.bg} />
-                  <Text style={styles.settingsPrimaryButtonText}>Scan pairing code</Text>
+                  {scannerOpening ? (
+                    <ActivityIndicator size="small" color={theme.bg} />
+                  ) : (
+                    <MicrodexIcon name="qrCode" size={16} color={theme.bg} />
+                  )}
+                  <Text style={styles.settingsPrimaryButtonText}>
+                    {scannerOpening ? 'Opening camera…' : 'Scan pairing code'}
+                  </Text>
                 </Pressable>
                 {noticeError ? (
                   <View style={[styles.notice, styles.noticeError]}>
